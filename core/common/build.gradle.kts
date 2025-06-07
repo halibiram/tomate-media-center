@@ -1,15 +1,17 @@
 // build.gradle.kts for core/common module
 plugins {
-    id("com.android.library") // Or other appropriate plugin
-    kotlin("android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
     namespace = "com.halibiram.tomato.core.common"
-    compileSdk = 33 // Example SDK version
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 24
+        minSdk = libs.versions.minSdk.get().toInt()
         // No testInstrumentationRunner for library modules unless they have instrumented tests
     }
 
@@ -20,10 +22,21 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
-    // Add common dependencies, e.g., Kotlin stdlib, coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1") // Example
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.1") // For BaseViewModel example
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    // Timber for logging
+    implementation(libs.timber)
 }

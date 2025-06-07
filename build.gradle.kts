@@ -1,11 +1,12 @@
 # Root build.gradle.kts - Configure your build environment here
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 plugins {
-    // id("com.android.application") version "8.2.0" apply false // Example
-    // id("com.android.library") version "8.2.0" apply false // Example
-    // id("org.jetbrains.kotlin.android") version "1.9.20" apply false // Example
-    // id("org.jetbrains.kotlin.jvm") version "1.9.20" apply false // Example
-    // id("com.google.devtools.ksp") version "1.9.20-1.0.14" apply false // Example for KSP
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.hilt) apply false
 }
 
 // tasks.register("clean", Delete::class) {

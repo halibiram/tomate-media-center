@@ -1,17 +1,18 @@
 // build.gradle.kts for data module
 plugins {
-    id("com.android.library")
-    kotlin("android")
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.8.20" // For DTOs
-    // id("com.google.devtools.ksp") version "1.8.20-1.0.11" // If using Room entities directly here, or for Hilt
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
     namespace = "com.halibiram.tomato.data"
-    compileSdk = 33
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 24
+        minSdk = libs.versions.minSdk.get().toInt()
     }
 
     compileOptions {
@@ -21,28 +22,33 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core:common"))
-    implementation(project(":core:network"))   // For HttpClient, network responses
-    implementation(project(":core:database"))  // For DAOs, Entities
-    implementation(project(":core:datastore")) // For preferences, if used by extensions data part
-    implementation(project(":domain"))         // For Repository interfaces, Domain Models
+    implementation(project(":core:network"))
+    implementation(project(":core:database"))
+    implementation(project(":core:datastore"))
+    implementation(project(":domain"))
 
-    // Kotlinx Serialization (already in core:network but good to be explicit if used heavily for DTOs)
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.0")
+    // Kotlinx Serialization
+    implementation(libs.kotlinx.serialization.json)
 
-    // Ktor (already in core:network, but if this module defines APIs with it)
-    // implementation("io.ktor:ktor-client-core:2.3.0")
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
 
-    // Room (already in core:database)
-    // implementation("androidx.room:room-ktx:2.5.2")
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.android)
 
-    // Dagger/Hilt (if used for DI)
-    // implementation("com.google.dagger:hilt-android:2.45")
-    // kapt("com.google.dagger:hilt-compiler:2.45") // or ksp if Hilt supports it fully for your setup
+    // Timber
+    implementation(libs.timber)
 
-    // For LruCache in CacheManager example
-    implementation("androidx.collection:collection-ktx:1.2.0")
+    // For LruCache
+    implementation(libs.androidx.collection.ktx)
 }

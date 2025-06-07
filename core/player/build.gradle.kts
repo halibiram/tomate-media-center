@@ -1,15 +1,17 @@
 // build.gradle.kts for core/player module
 plugins {
-    id("com.android.library")
-    kotlin("android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
     namespace = "com.halibiram.tomato.core.player"
-    compileSdk = 33
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 24
+        minSdk = libs.versions.minSdk.get().toInt()
     }
 
     compileOptions {
@@ -19,18 +21,27 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:datastore")) // May need player preferences
 
-    // Media3 (ExoPlayer, UI, Session)
-    val media3Version = "1.1.1" // Example version
-    implementation("androidx.media3:media3-exoplayer:$media3Version")
-    implementation("androidx.media3:media3-ui:$media3Version")
-    implementation("androidx.media3:media3-session:$media3Version")
+    // Media3
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
+    implementation(libs.media3.session)
+    // implementation(libs.media3.cast) // If Chromecast support is needed
 
-    // Google Cast SDK (optional, if used)
-    // implementation("com.google.android.gms:play-services-cast-framework:21.3.0") // Example version
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.android)
 }

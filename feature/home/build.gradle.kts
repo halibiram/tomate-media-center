@@ -1,16 +1,18 @@
 // build.gradle.kts for feature/home module
 plugins {
-    id("com.android.library")
-    kotlin("android")
-    id("org.jetbrains.kotlin.android") // Ensure this is applied for Compose
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
     namespace = "com.halibiram.tomato.feature.home"
-    compileSdk = 33
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 24
+        minSdk = libs.versions.minSdk.get().toInt()
     }
 
     compileOptions {
@@ -19,34 +21,51 @@ android {
     }
     kotlinOptions {
         jvmTarget = "1.8"
+        freeCompilerArgs = freeCompilerArgs + listOf(
+            "-P",
+            "plugin:androidx.compose.compiler.plugins.kotlin:enableStrongSkippingMode=true",
+        )
     }
     buildFeatures {
-        compose = true // Enable Compose for this module
+        compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.4.3" // Example, use appropriate version
+        kotlinCompilerExtensionVersion = libs.versions.kotlinCompilerExtension.get()
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
     }
 }
 
 dependencies {
     implementation(project(":core:common"))
-    implementation(project(":core:domain")) // Or specific core modules like :core:network, :core:database if needed directly
-    // implementation(project(":app")) // This would be an anti-pattern for feature modules
+    implementation(project(":domain"))
 
     // AndroidX & Compose
-    implementation("androidx.core:core-ktx:1.10.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.1")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1")
-    implementation("androidx.compose.ui:ui:1.4.3")
-    implementation("androidx.compose.material3:material3:1.1.1") // Or Material 2
-    implementation("androidx.compose.ui:ui-tooling-preview:1.4.3")
-    debugImplementation("androidx.compose.ui:ui-tooling:1.4.3")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-    // Navigation Compose
-    implementation("androidx.navigation:navigation-compose:2.6.0")
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.compose.navigation)
+    implementation(libs.compose.hilt.navigation)
+    implementation(libs.compose.animation)
+    implementation(libs.compose.material.icons.extended)
 
-    // Dagger/Hilt (if used)
-    // implementation("com.google.dagger:hilt-android:2.45")
-    // kapt("com.google.dagger:hilt-compiler:2.45")
-    // implementation("androidx.hilt:hilt-navigation-compose:1.0.0")
+
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.android)
+
+    // Timber
+    implementation(libs.timber)
 }

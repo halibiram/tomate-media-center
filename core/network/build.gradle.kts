@@ -1,16 +1,18 @@
 // build.gradle.kts for core/network module
 plugins {
-    id("com.android.library")
-    kotlin("android")
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.8.20" // Example version
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
     namespace = "com.halibiram.tomato.core.network"
-    compileSdk = 33
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 24
+        minSdk = libs.versions.minSdk.get().toInt()
     }
 
     compileOptions {
@@ -20,18 +22,32 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core:common")) // Depends on core:common
 
     // Ktor
-    implementation("io.ktor:ktor-client-core:2.3.0") // Example version
-    implementation("io.ktor:ktor-client-cio:2.3.0") // Example for JVM, use -android for Android
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.0")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.0")
-    implementation("io.ktor:ktor-client-logging:2.3.0")
+    implementation(libs.ktor.client.android)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.client.logging)
 
-    // Kotlinx Serialization
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.0") // Example version
+    // Kotlinx Serialization (already covered by ktor-serialization-kotlinx-json, but explicit is fine)
+    implementation(libs.kotlinx.serialization.json)
+
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    // Timber for logging (network requests)
+    implementation(libs.timber)
+
+    // Coroutines (Ktor is suspend-based)
+    implementation(libs.kotlinx.coroutines.android)
 }

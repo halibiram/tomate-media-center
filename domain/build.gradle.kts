@@ -1,6 +1,6 @@
 // build.gradle.kts for domain module (Kotlin JVM library)
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "1.8.20" // Ensure version consistency
+    alias(libs.plugins.kotlin.jvm)
 }
 
 java {
@@ -8,13 +8,17 @@ java {
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 
-dependencies {
-    // Kotlin Standard Library (already included by the plugin but good for clarity)
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+// Required for Kotlin JVM modules that are part of an Android project
+// to ensure they are correctly identified by AGP.
+android {
+    namespace = "com.halibiram.tomato.domain"
+}
 
+
+dependencies {
     // Coroutines for Flow and suspend functions
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1") // Example version
+    implementation(libs.kotlinx.coroutines.core)
 
     // Javax Inject for @Inject annotation (optional, but common for use cases)
-    implementation("javax.inject:javax.inject:1")
+    implementation(libs.javax.inject)
 }

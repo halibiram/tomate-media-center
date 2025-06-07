@@ -1,16 +1,17 @@
-// build.gradle.kts for feature/player module
 plugins {
-    id("com.android.library")
-    kotlin("android")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
     namespace = "com.halibiram.tomato.feature.player"
-    compileSdk = 33
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 24
+        minSdk = libs.versions.minSdk.get().toInt()
     }
 
     compileOptions {
@@ -19,39 +20,53 @@ android {
     }
     kotlinOptions {
         jvmTarget = "1.8"
+        freeCompilerArgs = freeCompilerArgs + listOf(
+            "-P",
+            "plugin:androidx.compose.compiler.plugins.kotlin:enableStrongSkippingMode=true",
+        )
     }
     buildFeatures {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.4.3"
+        kotlinCompilerExtensionVersion = libs.versions.kotlinCompilerExtension.get()
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
     }
 }
 
 dependencies {
     implementation(project(":core:common"))
-    implementation(project(":core:player")) // Key dependency for player functionality
-    implementation(project(":core:domain")) // For media metadata, etc.
+    implementation(project(":domain"))
+    implementation(project(":core:player"))
+    implementation(project(":core:datastore")) // For player settings/state
 
     // AndroidX & Compose
-    implementation("androidx.core:core-ktx:1.10.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.1")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1")
-    implementation("androidx.compose.ui:ui:1.4.3")
-    implementation("androidx.compose.foundation:foundation:1.4.3") // For gestures
-    implementation("androidx.compose.material3:material3:1.1.1")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.4.3")
-    debugImplementation("androidx.compose.ui:ui-tooling:1.4.3")
-    implementation("androidx.compose.ui:ui-viewbinding:1.4.3") // If using AndroidView with view binding
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-    // Navigation Compose
-    implementation("androidx.navigation:navigation-compose:2.6.0")
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
+    implementation(libs.compose.navigation)
+    implementation(libs.compose.hilt.navigation)
+    implementation(libs.compose.animation)
+    implementation(libs.compose.material.icons.extended)
 
-    // Media3 (if interacting with it directly in the feature module, though core:player should encapsulate)
-    // implementation("androidx.media3:media3-ui:1.1.1")
 
-    // Dagger/Hilt (if used)
-    // implementation("com.google.dagger:hilt-android:2.45")
-    // kapt("com.google.dagger:hilt-compiler:2.45")
-    // implementation("androidx.hilt:hilt-navigation-compose:1.0.0")
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.android)
+
+    // Timber
+    implementation(libs.timber)
 }

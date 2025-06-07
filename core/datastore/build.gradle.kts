@@ -1,16 +1,18 @@
 // build.gradle.kts for core/datastore module
 plugins {
-    id("com.android.library")
-    kotlin("android")
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.8.20" // For Kotlinx Serialization
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
     namespace = "com.halibiram.tomato.core.datastore"
-    compileSdk = 33
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 24
+        minSdk = libs.versions.minSdk.get().toInt()
     }
 
     compileOptions {
@@ -20,17 +22,26 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core:common"))
 
     // Preferences DataStore
-    implementation("androidx.datastore:datastore-preferences:1.0.0") // Example version
+    implementation(libs.datastore.preferences)
 
-    // Proto DataStore (if you were to use it, add this)
-    // implementation  "androidx.datastore:datastore-core:1.0.0"
+    // Kotlinx Serialization
+    implementation(libs.kotlinx.serialization.json)
 
-    // Kotlinx Serialization (for custom serializers with Proto or for Preferences if storing complex objects)
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.0")
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    // Kotlin Coroutines
+    implementation(libs.kotlinx.coroutines.android) // For Flow support with DataStore
 }
