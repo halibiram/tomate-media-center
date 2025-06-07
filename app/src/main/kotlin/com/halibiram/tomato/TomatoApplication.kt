@@ -1,11 +1,15 @@
 package com.halibiram.tomato
 
-// TomatoApplication class
 import android.app.Application
+import dagger.hilt.android.HiltAndroidApp
+import timber.log.Timber
 
+@HiltAndroidApp
 class TomatoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        // Initialization code here
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        }
     }
 }

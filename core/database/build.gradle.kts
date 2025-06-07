@@ -1,16 +1,17 @@
 // build.gradle.kts for core/database module
 plugins {
-    id("com.android.library")
-    kotlin("android")
-    id("com.google.devtools.ksp") version "1.8.20-1.0.11" // KSP for Room
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
     namespace = "com.halibiram.tomato.core.database"
-    compileSdk = 33
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 24
+        minSdk = libs.versions.minSdk.get().toInt()
     }
 
     compileOptions {
@@ -20,20 +21,25 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
     implementation(project(":core:common"))
 
     // Room
-    val roomVersion = "2.5.2" // Example version
-    implementation("androidx.room:room-runtime:$roomVersion")
-    ksp("androidx.room:room-compiler:$roomVersion")
-    // Optional - Kotlin Extensions and Coroutines support for Room
-    implementation("androidx.room:room-ktx:$roomVersion")
-    // Optional - Test helpers
-    // testImplementation("androidx.room:room-testing:$roomVersion")
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
 
-    // Kotlin Coroutines for Flow
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1") // Or core if not Android specific
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    // Kotlin Coroutines
+    implementation(libs.kotlinx.coroutines.android)
 }
