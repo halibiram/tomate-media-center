@@ -1,6 +1,7 @@
 package com.halibiram.tomato.domain.usecase.bookmark
 
-import com.halibiram.tomato.domain.repository.Bookmark
+import com.halibiram.tomato.domain.model.Bookmark
+import com.halibiram.tomato.domain.model.BookmarkMediaType // Import enum
 import com.halibiram.tomato.domain.repository.BookmarkRepository
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -9,20 +10,20 @@ class GetBookmarksUseCase @Inject constructor(
     private val bookmarkRepository: BookmarkRepository
 ) {
     /**
-     * Retrieves a flow of bookmark items based on a type filter.
-     * @param filterType The type to filter by (e.g., "ALL", "MOVIE", "SERIES").
+     * Retrieves a flow of bookmark items, optionally filtered by type.
+     * @param filterType The type to filter by (e.g., MOVIE, SERIES), or null for all.
      * @return A Flow emitting a list of bookmark items.
      */
-    operator fun invoke(filterType: String = "ALL"): Flow<List<Bookmark>> {
-        return bookmarkRepository.getBookmarksFlow(filterType)
+    operator fun invoke(filterType: BookmarkMediaType? = null): Flow<List<Bookmark>> {
+        return bookmarkRepository.getBookmarks(filterType)
     }
 
     /**
-     * Checks if a specific item is bookmarked.
-     * @param mediaId The ID of the media item.
-     * @return A Flow emitting true if bookmarked, false otherwise.
+     * Retrieves a flow of bookmarked media IDs, optionally filtered by type.
+     * @param filterType The type to filter by, or null for all.
+     * @return A Flow emitting a set of bookmarked media IDs.
      */
-    fun isBookmarked(mediaId: String): Flow<Boolean> {
-        return bookmarkRepository.isBookmarkedFlow(mediaId)
+    fun getBookmarkedIdsFlow(filterType: BookmarkMediaType? = null): Flow<Set<String>> {
+        return bookmarkRepository.getBookmarkedIdsFlow(filterType)
     }
 }

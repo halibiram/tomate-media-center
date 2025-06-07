@@ -2,145 +2,127 @@ package com.halibiram.tomato.feature.downloads.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-// import androidx.work.WorkManager // Example
-import com.halibiram.tomato.core.database.entity.DownloadEntity // Assuming this exists
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collectLatest
+import com.halibiram.tomato.domain.model.Download
+import com.halibiram.tomato.domain.model.DownloadMediaType
+import com.halibiram.tomato.domain.model.DownloadStatus
+import com.halibiram.tomato.domain.usecase.download.* // Import all download use cases
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.util.Date
+import javax.inject.Inject
 
-// Simplified Download Item for UI representation, can be same as DownloadEntity or mapped
-data class UiDownloadItem(
-    val mediaId: String,
-    val title: String?,
-    val posterPath: String?,
-    val downloadSizeBytes: Long,
-    val downloadedSizeBytes: Long,
-    val progressPercentage: Int,
-    val downloadStatus: String,
-    val addedDate: Date,
-    val mediaType: String // "movie" or "episode"
-)
+// UiDownloadItem can be the same as domain.model.Download for simplicity
+// typealias UiDownloadItem = com.halibiram.tomato.domain.model.Download
 
 data class DownloadsUiState(
-    val downloads: List<UiDownloadItem> = emptyList(),
     val isLoading: Boolean = true,
+    val downloads: List<Download> = emptyList(), // Using domain model directly
     val error: String? = null,
-    val currentFilter: String = "ALL" // e.g., "ALL", "DOWNLOADING", "COMPLETED"
+    val currentFilter: String = "ALL" // Example filter state
 )
 
-// @HiltViewModel
-class DownloadsViewModel /*@Inject constructor(
-    // private val downloadsRepository: DownloadsRepository,
-    // private val workManager: WorkManager // To observe worker status
-)*/ : ViewModel() {
+@HiltViewModel
+class DownloadsViewModel @Inject constructor(
+    private val getDownloadsUseCase: GetDownloadsUseCase,
+    private val downloadMediaUseCase: DownloadMediaUseCase,
+    private val pauseDownloadUseCase: PauseDownloadUseCase,
+    private val resumeDownloadUseCase: ResumeDownloadUseCase,
+    private val cancelDownloadUseCase: CancelDownloadUseCase,
+    private val deleteDownloadedFileUseCase: DeleteDownloadedFileUseCase
+    // private val workManager: androidx.work.WorkManager // For observing WorkManager progress directly if needed
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DownloadsUiState())
-    val uiState: StateFlow<DownloadsUiState> = _uiState
+    val uiState: StateFlow<DownloadsUiState> = _uiState.asStateFlow()
 
     init {
-        loadDownloads()
-        // observeDownloadWorkerStatus() // If you want to update UI based on worker progress directly
+        observeDownloads()
+        // observeWorkManagerProgress() // Optional: For more real-time UI updates from WorkManager
     }
 
-    fun loadDownloads(filter: String = "ALL") {
+    private fun observeDownloads() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null, currentFilter = filter)
-            try {
-                // downloadsRepository.getDownloadsByStatusFlow(filter).collectLatest { entities ->
-                //     val uiItems = entities.map { entity ->
-                //         UiDownloadItem(
-                //             mediaId = entity.mediaId,
-                //             title = entity.title,
-                //             posterPath = entity.posterPath,
-                //             downloadSizeBytes = entity.downloadSizeBytes,
-                //             downloadedSizeBytes = entity.downloadedSizeBytes,
-                //             progressPercentage = entity.progressPercentage,
-                //             downloadStatus = entity.downloadStatus,
-                //             addedDate = entity.addedDate,
-                //             mediaType = entity.mediaType
-                //         )
-                //     }
-                //     _uiState.value = _uiState.value.copy(isLoading = false, downloads = uiItems)
-                // }
-
-                // Simulate data fetch
-                kotlinx.coroutines.delay(500)
-                val simulatedDownloads = listOf(
-                    UiDownloadItem("movie123", "Big Buck Bunny", null, 100000000, 50000000, 50, DownloadEntity.STATUS_DOWNLOADING, Date(), DownloadEntity.TYPE_MOVIE),
-                    UiDownloadItem("episode456", "S01E01 - Pilot", null, 200000000, 200000000, 100, DownloadEntity.STATUS_COMPLETED, Date(), DownloadEntity.TYPE_EPISODE)
-                ).filter {
-                    filter == "ALL" || it.downloadStatus == filter
+            // TODO: Add filter parameter to getDownloadsUseCase or handle filtering here
+            getDownloadsUseCase.invoke() // Default: get all
+                .onStart { _uiState.update { it.copy(isLoading = true, error = null) } }
+                .catch { e -> _uiState.update { it.copy(isLoading = false, error = e.localizedMessage ?: "Error fetching downloads") } }
+                .collectLatest { downloads ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            downloads = downloads.sortedWith(compareByDescending<Download> { it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.PENDING }.thenByDescending { it.addedDate })
+                        )
+                    }
                 }
-                _uiState.value = _uiState.value.copy(isLoading = false, downloads = simulatedDownloads)
+        }
+    }
 
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = "Failed to load downloads: ${e.message}")
+    // Example: Start a new download (parameters would come from UI event)
+    fun startNewDownload(mediaId: String, mediaUrl: String, title: String, mediaType: DownloadMediaType, posterPath: String?) {
+        viewModelScope.launch {
+            // Show some immediate feedback if needed (e.g., toast or temporary loading state for this item)
+            val result = downloadMediaUseCase(
+                mediaId = mediaId,
+                mediaType = mediaType,
+                mediaUrl = mediaUrl,
+                title = title,
+                posterPath = posterPath
+            )
+            if (result == null) {
+                // Handle case where download already exists or couldn't be enqueued
+                 _uiState.update { it.copy(error = "Download for '$title' already exists or could not be started.") }
+            }
+            // UI will update automatically via observeDownloads() when DB changes
+        }
+    }
+
+    fun pauseDownload(downloadId: String) {
+        viewModelScope.launch {
+            pauseDownloadUseCase(downloadId)
+            // UI updates via DB observation
+        }
+    }
+
+    fun resumeDownload(download: Download) {
+        viewModelScope.launch {
+            resumeDownloadUseCase(download)
+            // UI updates via DB observation
+        }
+    }
+
+    fun cancelDownload(downloadId: String) {
+        viewModelScope.launch {
+            cancelDownloadUseCase(downloadId)
+            // UI updates via DB observation, or worker might delete from DB on cancel.
+            // If it doesn't delete, the status will be CANCELLED.
+        }
+    }
+
+    fun deleteDownload(download: Download) {
+        viewModelScope.launch {
+            deleteDownloadedFileUseCase(download.id)
+            // UI updates via DB observation (item will be removed)
+        }
+    }
+
+    fun retryDownload(download: Download) {
+        // Retrying a failed download can be similar to resuming a paused one
+        if (download.status == DownloadStatus.FAILED) {
+            viewModelScope.launch {
+                resumeDownloadUseCase(download) // Re-enqueue the worker
             }
         }
     }
 
-    fun cancelDownload(mediaId: String) {
-        viewModelScope.launch {
-            // downloadsRepository.updateDownloadStatus(mediaId, DownloadEntity.STATUS_CANCELLED)
-            // workManager.cancelUniqueWork(mediaId) // Assuming mediaId is used as unique work name
-            // Refresh list or rely on flow to update
-            loadDownloads(_uiState.value.currentFilter)
-        }
-    }
-
-    fun pauseDownload(mediaId: String) {
-        viewModelScope.launch {
-            // downloadsRepository.updateDownloadStatus(mediaId, DownloadEntity.STATUS_PAUSED)
-            // Potentially signal worker to pause, though WorkManager's pause is not direct.
-            // Often means cancelling and re-queueing with constraints or handling in worker.
-            loadDownloads(_uiState.value.currentFilter)
-        }
-    }
-
-    fun resumeDownload(mediaId: String) {
-        viewModelScope.launch {
-            // val downloadEntity = downloadsRepository.getDownloadById(mediaId)
-            // if (downloadEntity != null && downloadEntity.downloadStatus == DownloadEntity.STATUS_PAUSED) {
-            //     // Re-enqueue download worker or update its state
-            //     // downloadService.enqueueDownload(downloadEntity.mediaId, downloadEntity.mediaType, downloadEntity.downloadUrl)
-            // }
-            loadDownloads(_uiState.value.currentFilter)
-        }
-    }
-
-    fun deleteDownload(mediaId: String, filePath: String?) {
-        viewModelScope.launch {
-            // downloadsRepository.deleteDownload(mediaId)
-            // if (filePath != null) {
-            //     // Delete the actual file from storage
-            //     // File(filePath).delete()
-            // }
-            loadDownloads(_uiState.value.currentFilter)
-        }
-    }
-
-    fun retryDownload(mediaId: String) {
-         viewModelScope.launch {
-            // val downloadEntity = downloadsRepository.getDownloadById(mediaId)
-            // if (downloadEntity != null && downloadEntity.downloadStatus == DownloadEntity.STATUS_FAILED) {
-            //     // Re-enqueue download worker
-            //     // downloadService.enqueueDownload(downloadEntity.mediaId, downloadEntity.mediaType, downloadEntity.downloadUrl)
-            // }
-            loadDownloads(_uiState.value.currentFilter)
-        }
-    }
-
-    // private fun observeDownloadWorkerStatus() {
-    //     // Example: If you want to observe WorkManager's LiveData for progress
-    //     // This would typically be done by observing work info by tag or ID
-    //     // For each download, you might observe its specific worker.
-    //     // This can get complex and might be better handled by updating DB from worker
-    //     // and having the UI react to DB changes.
-    // }
 
     fun onFilterChange(newFilter: String) {
-        loadDownloads(newFilter)
+        // TODO: Implement filtering logic if getDownloadsUseCase doesn't support it directly.
+        // This might involve re-fetching from use case with filter or client-side filtering.
+        // For now, just updating state.
+        _uiState.update { it.copy(currentFilter = newFilter) }
+        // If use case supports filtering:
+        // viewModelScope.launch {
+        //     getDownloadsUseCase.invoke(filter = newFilter).collectLatest { ... }
+        // }
     }
 }

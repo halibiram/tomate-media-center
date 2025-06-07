@@ -11,25 +11,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.halibiram.tomato.core.datastore.preferences.AppTheme // Assuming this path
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.halibiram.tomato.core.datastore.preferences.AppThemePreference // Import from correct path
+import com.halibiram.tomato.feature.settings.presentation.component.DialogSettingItem
 import com.halibiram.tomato.feature.settings.presentation.component.SettingItem
-import com.halibiram.tomato.feature.settings.presentation.component.SettingControlType
-import com.halibiram.tomato.ui.theme.TomatoTheme
+import com.halibiram.tomato.feature.settings.presentation.component.SwitchSettingItem
+import com.halibiram.tomato.ui.theme.TomatoTheme // Ensure this path is correct
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    // viewModel: SettingsViewModel = hiltViewModel(), // With Hilt
-    viewModel: SettingsViewModel, // Pass for preview or non-Hilt
+    viewModel: SettingsViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit,
-    onNavigateToAbout: () -> Unit, // Example of a sub-navigation
-    onNavigateToAccount: () -> Unit // Example
+    onNavigateToAbout: () -> Unit, // Example for navigation
+    onNavigateToAccount: () -> Unit // Example for navigation
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val settings = uiState.settings
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val appPrefs = uiState.appPrefs
+    val playerPrefs = uiState.playerPrefs
+    val userPrefs = uiState.userPrefs
 
-    // For theme selection dialog
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showSubtitleLangDialog by remember { mutableStateOf(false) }
+    // Add other dialog states as needed, e.g., for preferred resolution, seek increment
 
     Scaffold(
         topBar = {
@@ -43,13 +48,17 @@ fun SettingsScreen(
             )
         }
     ) { paddingValues ->
-        if (uiState.isLoading) {
+        if (uiState.isLoading && (appPrefs == AppPreferencesData() && playerPrefs == PlayerPreferencesData() && userPrefs == UserPreferencesData())) { // Show loading only on initial empty load
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else if (uiState.error != null) {
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp), contentAlignment = Alignment.Center) {
-                Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error)
+                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = { /* viewModel.retryLoadSettings() */ viewModel.clearSettingsError() }) { Text("Dismiss") } // Or Retry
+                }
             }
         } else {
             Column(
@@ -58,100 +67,119 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
             ) {
+                // Appearance Section
+                SectionTitle("Appearance")
+                DialogSettingItem(
+                    icon = Icons.Default.Palette,
+                    title = "Theme",
+                    currentValue = appPrefs.appTheme.name.replace('_', ' ').capitalize(),
+                    onClick = { showThemeDialog = true }
+                )
+                // Example for Theme Color - assuming it's a string for now
+                // DialogSettingItem(
+                //     icon = Icons.Default.ColorLens,
+                //     title = "Theme Color",
+                //     currentValue = appPrefs.selectedThemeColor ?: "Default",
+                //     onClick = { /* TODO: Show theme color picker dialog */ }
+                // )
+
+                // Player Settings Section
+                SectionTitle("Player")
+                SwitchSettingItem(
+                    icon = Icons.Default.SkipNext,
+                    title = "Auto-play next episode",
+                    summary = if (playerPrefs.autoPlayNext) "Enabled" else "Disabled",
+                    checked = playerPrefs.autoPlayNext,
+                    onCheckedChanged = { viewModel.updateAutoPlayNext(it) }
+                )
+                DialogSettingItem(
+                    icon = Icons.Default.ClosedCaption,
+                    title = "Default Subtitle Language",
+                    currentValue = Locale(playerPrefs.defaultSubtitleLanguage).displayName,
+                    onClick = { showSubtitleLangDialog = true }
+                )
+                // Example: Preferred Resolution
+                // DialogSettingItem(
+                //     icon = Icons.Default.SettingsEthernet, // Placeholder icon
+                //     title = "Preferred Resolution",
+                //     currentValue = playerPrefs.preferredResolution,
+                //     onClick = { /* TODO: Show resolution selection dialog */ }
+                // )
+                // Example: Seek Increment
+                // DialogSettingItem(
+                //     icon = Icons.Default.FastForward,
+                //     title = "Seek Increment",
+                //     currentValue = "${playerPrefs.seekIncrementSeconds} seconds",
+                //     onClick = { /* TODO: Show seek increment dialog */ }
+                // )
+
+
+                // Data & Sync Section
+                SectionTitle("Data & Synchronization")
+                SwitchSettingItem(
+                    icon = Icons.Default.DataSaverOn,
+                    title = "Data Saver Mode",
+                    summary = if (appPrefs.dataSaverMode) "Reduce data usage" else "Disabled",
+                    checked = appPrefs.dataSaverMode,
+                    onCheckedChanged = { viewModel.updateDataSaverMode(it) }
+                )
+                SettingItem( // Example of a setting that might just display info or navigate
+                    icon = Icons.Default.Sync,
+                    title = "Last Synced",
+                    summary = appPrefs.lastSyncTimestamp?.let { "At: ${Date(it).toLocaleString()}" } ?: "Never",
+                    onClick = { viewModel.updateLastSyncTimestamp(System.currentTimeMillis()) } // Example action: force sync
+                )
+
                 // Account Section
                 SectionTitle("Account")
                 SettingItem(
                     icon = Icons.Default.AccountCircle,
-                    title = "Profile",
-                    subtitle = settings.email ?: "Manage your account details",
-                    onClick = onNavigateToAccount
+                    title = userPrefs.username ?: "Account Details",
+                    summary = if(userPrefs.isLoggedIn) userPrefs.email ?: "Manage your account" else "Not logged in",
+                    onClick = onNavigateToAccount // Navigate to a dedicated account screen
                 )
+                if (userPrefs.isLoggedIn) {
+                    SettingItem(
+                        icon = Icons.Default.Logout,
+                        title = "Logout",
+                        onClick = { viewModel.logoutUser() /* TODO: Handle navigation post-logout */ }
+                    )
+                }
 
-                // Appearance Section
-                SectionTitle("Appearance")
-                SettingItem(
-                    icon = Icons.Default.Palette,
-                    title = "Theme",
-                    subtitle = "Current: ${settings.appTheme.name.replace('_', ' ').capitalize()}",
-                    controlType = SettingControlType.DROPDOWN, // Visually indicates it opens something
-                    currentValue = settings.appTheme.name.replace('_', ' ').capitalize(),
-                    onClick = { showThemeDialog = true }
-                )
 
-                // Player Settings Section
-                SectionTitle("Player")
-                SettingItem(
-                    icon = Icons.Default.PlayCircleOutline,
-                    title = "Auto-play next episode",
-                    controlType = SettingControlType.SWITCH,
-                    isChecked = settings.autoPlayNext,
-                    onCheckedChange = viewModel::toggleAutoPlayNext
-                )
-                SettingItem(
-                    icon = Icons.Default.Speed,
-                    title = "Playback Speed",
-                    controlType = SettingControlType.DROPDOWN, // Placeholder for actual dropdown
-                    currentValue = "${settings.playbackSpeed}x",
-                    onClick = { /* TODO: Show playback speed dialog */ }
-                )
-                SettingItem(
-                    icon = Icons.Default.ClosedCaption,
-                    title = "Preferred Subtitle Language",
-                    controlType = SettingControlType.DROPDOWN, // Placeholder
-                    currentValue = settings.preferredSubtitleLanguage.uppercase(),
-                    onClick = { /* TODO: Show language selection dialog */ }
-                )
-
-                // General Section
-                SectionTitle("General")
-                SettingItem(
-                    icon = Icons.Default.Notifications,
-                    title = "Enable Notifications",
-                    controlType = SettingControlType.SWITCH,
-                    isChecked = settings.notificationsEnabled,
-                    onCheckedChange = viewModel::toggleNotifications
-                )
-                SettingItem(
-                    icon = Icons.Default.DataSaverOn,
-                    title = "Data Saver Mode",
-                    subtitle = "Reduce data usage while streaming on mobile network",
-                    controlType = SettingControlType.SWITCH,
-                    isChecked = settings.dataSaverMode,
-                    onCheckedChange = viewModel::toggleDataSaver
-                )
+                // About Section
+                SectionTitle("About")
                 SettingItem(
                     icon = Icons.Default.Info,
-                    title = "About",
-                    subtitle = "App version, licenses, and more",
+                    title = "About Tomato",
+                    summary = "Version, licenses, and more",
                     onClick = onNavigateToAbout
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
-                Button(
-                    onClick = {
-                        // viewModel.logoutUser()
-                        // Potentially navigate after logout via an event from ViewModel
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Logout")
-                }
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(Modifier.height(32.dp)) // Add some space at the bottom
             }
         }
     }
 
     if (showThemeDialog) {
-        ThemeSelectionDialog(
-            currentTheme = settings.appTheme,
+        ThemeSelectionDialog( // Assuming this was defined in previous SettingsScreen or common place
+            currentTheme = appPrefs.appTheme,
             onThemeSelected = { theme ->
                 viewModel.updateAppTheme(theme)
                 showThemeDialog = false
             },
             onDismiss = { showThemeDialog = false }
+        )
+    }
+
+    if (showSubtitleLangDialog) {
+        // Example: Placeholder for subtitle language selection dialog
+        ListSelectionDialog(
+            title = "Select Subtitle Language",
+            items = listOf("en", "es", "fr", "de").map { Locale(it).displayName to it }, // Display Name to Code
+            selectedItemCode = playerPrefs.defaultSubtitleLanguage,
+            onItemSelected = { code -> viewModel.updateDefaultSubtitleLanguage(code) },
+            onDismiss = { showSubtitleLangDialog = false }
         )
     }
 }
@@ -162,15 +190,105 @@ private fun SectionTitle(title: String) {
         text = title,
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).padding(top = 8.dp)
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp)
     )
-    Divider(modifier = Modifier.padding(horizontal = 16.dp))
+    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp)) // M3 Divider
 }
 
+// Re-usable ListSelectionDialog (example)
+@Composable
+fun ListSelectionDialog(
+    title: String,
+    items: List<Pair<String, String>>, // List of (Display Name, Value Code)
+    selectedItemCode: String,
+    onItemSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            LazyColumn {
+                items(items) { (displayName, code) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onItemSelected(code)
+                                onDismiss()
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = (code == selectedItemCode),
+                            onClick = {
+                                onItemSelected(code)
+                                onDismiss()
+                            }
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Text(displayName)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+
+// Preview
+@Preview(showBackground = true, name = "Settings Screen Light")
+@Composable
+fun SettingsScreenPreview_Light() {
+    val mockViewModel: SettingsViewModel = mockk(relaxed = true)
+    every { mockViewModel.uiState } returns MutableStateFlow(
+        SettingsUiState(isLoading = false)
+    )
+    TomatoTheme(darkTheme = false) {
+        Surface {
+            SettingsScreen(
+                viewModel = mockViewModel,
+                onNavigateBack = {},
+                onNavigateToAbout = {},
+                onNavigateToAccount = {}
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "Settings Screen Dark")
+@Composable
+fun SettingsScreenPreview_Dark() {
+     val mockViewModel: SettingsViewModel = mockk(relaxed = true)
+    every { mockViewModel.uiState } returns MutableStateFlow(
+        SettingsUiState(
+            isLoading = false,
+            appPrefs = AppPreferencesData(appTheme = AppThemePreference.DARK, dataSaverMode = true, selectedThemeColor = null, lastSyncTimestamp = System.currentTimeMillis()),
+            playerPrefs = PlayerPreferencesData(defaultSubtitleLanguage = "es", preferredResolution = "1080p", autoPlayNext = false, seekIncrementSeconds = 15, playbackSpeed = 1.25f),
+            userPrefs = UserPreferencesData(userId = "123", isLoggedIn = true, authToken = "token", username = "TomatoUser")
+        )
+    )
+    TomatoTheme(darkTheme = true) {
+         Surface {
+            SettingsScreen(
+                viewModel = mockViewModel,
+                onNavigateBack = {},
+                onNavigateToAbout = {},
+                onNavigateToAccount = {}
+            )
+        }
+    }
+}
+
+// Re-using ThemeSelectionDialog from previous version of SettingsScreen.kt
 @Composable
 fun ThemeSelectionDialog(
-    currentTheme: AppTheme,
-    onThemeSelected: (AppTheme) -> Unit,
+    currentTheme: AppThemePreference,
+    onThemeSelected: (AppThemePreference) -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -178,7 +296,7 @@ fun ThemeSelectionDialog(
         title = { Text("Select Theme") },
         text = {
             Column {
-                AppTheme.values().forEach { theme ->
+                AppThemePreference.values().forEach { theme ->
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -200,32 +318,4 @@ fun ThemeSelectionDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun SettingsScreenPreview() {
-    val previewViewModel = SettingsViewModel() // Assumes default constructor or Hilt preview setup
-    TomatoTheme {
-        SettingsScreen(
-            viewModel = previewViewModel,
-            onNavigateBack = {},
-            onNavigateToAbout = {},
-            onNavigateToAccount = {}
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun SettingsScreenPreview_Dark() {
-    val previewViewModel = SettingsViewModel()
-    TomatoTheme(darkTheme = true) {
-        SettingsScreen(
-            viewModel = previewViewModel,
-            onNavigateBack = {},
-            onNavigateToAbout = {},
-            onNavigateToAccount = {}
-        )
-    }
 }

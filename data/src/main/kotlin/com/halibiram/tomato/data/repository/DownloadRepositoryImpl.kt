@@ -1,101 +1,133 @@
 package com.halibiram.tomato.data.repository
 
-import com.halibiram.tomato.core.database.dao.DownloadDao // Placeholder
-import com.halibiram.tomato.core.database.entity.DownloadEntity // For mapping
-import com.halibiram.tomato.domain.repository.DownloadItem
-import com.halibiram.tomato.domain.repository.DownloadRepository
+import com.halibiram.tomato.core.database.dao.DownloadDao
+import com.halibiram.tomato.core.database.entity.DownloadEntity
+import com.halibiram.tomato.domain.model.Download // Domain model
+import com.halibiram.tomato.domain.model.DownloadMediaType // Domain enum
+import com.halibiram.tomato.domain.model.DownloadStatus // Domain enum
+import com.halibiram.tomato.domain.repository.DownloadRepository // Domain interface
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import java.io.File // For deleting file
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class DownloadRepositoryImpl @Inject constructor(
-    private val downloadDao: DownloadDao? // Nullable for placeholder
-    // May also need WorkManager or a download service if not directly handled by DAO/Worker observation
+    private val downloadDao: DownloadDao
+    // private val context: android.content.Context // For file deletion, if needed here
 ) : DownloadRepository {
 
-    override fun getDownloadsByStatusFlow(statusFilter: String): Flow<List<DownloadItem>> {
-        return downloadDao?.getDownloadsByStatus(statusFilter)?.map { entities ->
-            entities.map { entity -> mapToDomain(entity) }
-        } ?: flow { emit(emptyList()) } // Emit empty if DAO is null
+    override suspend fun addDownload(download: Download) {
+        downloadDao.insertDownload(mapDomainToEntity(download))
     }
 
-    override suspend fun getDownloadById(mediaId: String): DownloadItem? {
-        return downloadDao?.getDownloadById(mediaId)?.let { entityFlow ->
-            // This is tricky if DAO returns Flow. Assuming a suspend fun getDownload(id) in DAO for simplicity.
-            // If getDownloadById in DAO returns Flow, this method should also return Flow.
-            // For now, let's assume a hypothetical suspend function in DAO or direct entity access for simplicity.
-            // val entity = entityFlow.firstOrNull() // Not ideal for suspend fun
-            // For placeholder, let's assume DAO has a suspend fun.
-            // For a more realistic scenario with Flow from DAO:
-            // return downloadDao?.getDownloadById(mediaId)?.firstOrNull()?.let { mapToDomain(it) }
-             null // Placeholder due to DAO returning Flow
-        }
-    }
-
-
-    override suspend fun addDownload(item: DownloadItem) {
-        // downloadDao?.insertDownload(mapToEntity(item))
-        // This would typically also trigger a DownloadWorker
-    }
-
-    override suspend fun updateDownloadStatus(mediaId: String, newStatus: String, downloadedBytes: Long?, progress: Int?) {
-        // downloadDao?.updateDownloadStatus(mediaId, newStatus)
-        // if (downloadedBytes != null && progress != null) {
-        //    downloadDao?.updateDownloadProgress(mediaId, newStatus, downloadedBytes, progress)
-        // }
-    }
-     override suspend fun updateDownloadSize(mediaId: String, totalSizeBytes: Long) {
-        // This might be part of DownloadEntity update logic
-        // downloadDao?.updateTotalSize(mediaId, totalSizeBytes) // Hypothetical DAO method
-    }
-
-
-    override suspend fun deleteDownload(mediaId: String): Boolean {
-        // downloadDao?.deleteDownloadById(mediaId)
-        // Also delete file from storage
-        return true
-    }
-
-    override suspend fun clearAllDownloads() {
-        // downloadDao?.deleteAllDownloads()
-        // Also delete all files from storage
-    }
-
-    // --- Mappers ---
-    private fun mapToDomain(entity: DownloadEntity): DownloadItem {
-        return DownloadItem(
-            mediaId = entity.mediaId,
-            title = entity.title,
-            posterPath = entity.posterPath,
-            downloadSizeBytes = entity.downloadSizeBytes,
-            downloadedSizeBytes = entity.downloadedSizeBytes,
-            progressPercentage = entity.progressPercentage,
-            downloadStatus = entity.downloadStatus,
-            addedDate = entity.addedDate,
-            mediaType = entity.mediaType,
-            filePath = entity.downloadPath // Assuming downloadPath is the local file path
+    // Renamed from updateDownloadProgressAndStatus to match DAO more closely if preferred,
+    // or keep the domain-facing name and map parameters. Let's use a more descriptive name.
+    override suspend fun updateDownloadState(
+        id: String,
+        progress: Int,
+        status: DownloadStatus,
+        downloadedSizeBytes: Long?,
+        totalSizeBytes: Long?,
+        filePath: String?,
+        completedTimestamp: Long?
+    ) {
+        downloadDao.updateDownloadState(
+            id = id,
+            progress = progress,
+            status = status.name, // Convert enum to string for DB
+            downloadedSizeBytes = downloadedSizeBytes,
+            totalSizeBytes = totalSizeBytes,
+            filePath = filePath,
+            completedTimestamp = if (status == DownloadStatus.COMPLETED) System.currentTimeMillis() else null
         )
     }
 
-    private fun mapToEntity(domain: DownloadItem): DownloadEntity {
-         return DownloadEntity(
+    override suspend fun updateDownloadStatus(id: String, status: DownloadStatus) {
+        downloadDao.updateDownloadStatus(id, status.name)
+    }
+
+
+    override fun getDownloads(): Flow<List<Download>> {
+        return downloadDao.getAllDownloads().map { entities ->
+            entities.map { mapEntityToDomain(it) }
+        }
+    }
+
+    override fun getActiveDownloadsFlow(): Flow<List<Download>> {
+        return downloadDao.getActiveDownloads().map { entities ->
+            entities.map { mapEntityToDomain(it) }
+        }
+    }
+
+    override suspend fun getDownload(id: String): Download? {
+        return downloadDao.getDownloadById(id)?.let { mapEntityToDomain(it) }
+    }
+
+    override fun getDownloadFlow(id: String): Flow<Download?> {
+        return downloadDao.getDownloadFlowById(id).map { entity ->
+            entity?.let { mapEntityToDomain(it) }
+        }
+    }
+
+    override suspend fun removeDownload(id: String): Boolean {
+        val downloadEntity = downloadDao.getDownloadById(id)
+        downloadEntity?.filePath?.let { path ->
+            try {
+                File(path).delete()
+            } catch (e: Exception) {
+                // Log file deletion error, but proceed to delete DB record
+                // Log.e("DownloadRepository", "Error deleting file $path: ${e.message}")
+            }
+        }
+        downloadDao.deleteDownload(id)
+        return true // Assume success for now, or check rowsAffected from DAO
+    }
+
+    override suspend fun clearAllDownloads() {
+        // This would require fetching all to delete files, which is heavy.
+        // A better approach for "clear all" might be to mark as "TO_BE_DELETED"
+        // and have a separate cleanup service, or only delete DB records.
+        // For now, just clear DB. File cleanup needs careful consideration.
+        downloadDao.clearDownloads()
+    }
+
+    // --- Mappers ---
+    private fun mapEntityToDomain(entity: DownloadEntity): Download {
+        return Download(
+            id = entity.id,
+            mediaId = entity.mediaId,
+            mediaType = try { DownloadMediaType.valueOf(entity.mediaType) } catch (e: IllegalArgumentException) { DownloadMediaType.OTHER },
+            title = entity.title,
+            downloadUrl = entity.downloadUrl, // May not be needed in domain model long-term if only for worker
+            status = try { DownloadStatus.valueOf(entity.status) } catch (e: IllegalArgumentException) { DownloadStatus.FAILED },
+            progress = entity.progress,
+            filePath = entity.filePath,
+            totalSizeBytes = entity.totalSizeBytes ?: 0L,
+            downloadedSizeBytes = entity.downloadedSizeBytes ?: 0L,
+            addedDate = entity.addedDateTimestamp,
+            posterPath = entity.posterPath
+            // Map other fields like seriesIdForEpisode if they exist in domain Download model
+        )
+    }
+
+    private fun mapDomainToEntity(domain: Download): DownloadEntity {
+        return DownloadEntity(
+            id = domain.id,
             mediaId = domain.mediaId,
+            mediaType = domain.mediaType.name,
             title = domain.title,
-            posterPath = domain.posterPath,
-            downloadSizeBytes = domain.downloadSizeBytes,
+            downloadUrl = domain.downloadUrl,
+            filePath = domain.filePath,
+            status = domain.status.name,
+            progress = domain.progress,
+            totalSizeBytes = domain.totalSizeBytes,
             downloadedSizeBytes = domain.downloadedSizeBytes,
-            progressPercentage = domain.progressPercentage,
-            downloadStatus = domain.downloadStatus,
-            addedDate = domain.addedDate,
-            mediaType = domain.mediaType,
-            downloadPath = domain.filePath ?: "", // downloadPath should be set when download starts
-            // Other fields like seriesId, seasonNumber, episodeNumber if applicable
-            seriesId = null,
-            seasonNumber = null,
-            episodeNumber = null
+            addedDateTimestamp = domain.addedDate,
+            posterPath = domain.posterPath,
+            completedDateTimestamp = if (domain.status == DownloadStatus.COMPLETED) System.currentTimeMillis() else null
+            // Map other fields
         )
     }
 }

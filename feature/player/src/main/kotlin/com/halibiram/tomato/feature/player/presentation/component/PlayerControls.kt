@@ -6,16 +6,20 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.* // Import all filled icons for convenience
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.halibiram.tomato.core.player.exoplayer.PlayerState // Core PlayerState
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.mediarouter.app.MediaRouteButton
+import com.google.android.gms.cast.framework.CastButtonFactory
+import com.halibiram.tomato.core.player.exoplayer.PlayerState
 import com.halibiram.tomato.ui.theme.TomatoTheme
 import java.util.concurrent.TimeUnit
 
@@ -35,31 +39,29 @@ fun PlayerControls(
     modifier: Modifier = Modifier,
     isVisible: Boolean,
     playerState: PlayerState,
-    mediaTitle: String, // Added for displaying title
+    mediaTitle: String,
+    isCastAvailable: Boolean, // To show/hide Cast button
+    isCasting: Boolean, // To potentially change behavior or UI if casting
     onPlayPauseToggle: () -> Unit,
     onSeekForward: () -> Unit,
     onSeekBackward: () -> Unit,
-    onSeekTo: (Long) -> Unit, // For slider interaction
+    onSeekTo: (Long) -> Unit,
     onFullScreenToggle: () -> Unit,
-    onSettingsClick: () -> Unit, // For subtitles, quality, speed
-    // Add more specific callbacks if needed, e.g., for next/prev episode
-    // onNextEpisode: (() -> Unit)? = null,
-    // onPreviousEpisode: (() -> Unit)? = null,
+    onSettingsClick: () -> Unit,
+    // onStartCasting: () -> Unit, // Cast button itself handles connection UI
+    // onStopCasting: () -> Unit
 ) {
     AnimatedVisibility(
         visible = isVisible,
         enter = fadeIn(),
         exit = fadeOut(),
-        modifier = modifier.fillMaxSize() // Takes full size to overlay correctly
+        modifier = modifier.fillMaxSize()
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f)) // Semi-transparent background for the whole controls area
+                .background(Color.Black.copy(alpha = 0.6f))
         ) {
-            // Top Controls (e.g., Title, Back Button - if not handled by PlayerOverlay)
-            // For this component, let's assume a top bar part of PlayerScreen itself or PlayerOverlay handles title/back.
-            // We can add a simple title display here if needed.
             Text(
                 text = mediaTitle,
                 style = MaterialTheme.typography.titleMedium,
@@ -68,18 +70,15 @@ fun PlayerControls(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 16.dp, start = 64.dp, end = 64.dp) // Padding to avoid overlapping with potential system icons or back buttons
+                    .padding(top = 16.dp, start = 64.dp, end = 64.dp)
             )
 
-
-            // Main Playback Controls (Centered or Bottom)
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                // Seek Bar
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -114,62 +113,62 @@ fun PlayerControls(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Buttons Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Placeholder for Previous Track/Episode if applicable
-                    // IconButton(onClick = { /* onPreviousEpisode?.invoke() */ }) {
-                    //     Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(36.dp))
-                    // }
-
-                    IconButton(onClick = onSeekBackward) {
+                    IconButton(onClick = onSeekBackward, enabled = !isCasting /* Disable local seek if casting */) {
                         Icon(Icons.Default.FastRewind, contentDescription = "Rewind 10s", tint = Color.White, modifier = Modifier.size(36.dp))
                     }
 
                     IconButton(onClick = onPlayPauseToggle, modifier = Modifier.size(56.dp)) {
                         Icon(
-                            imageVector = if (playerState.isPlaying) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled,
+                            // For casting, icon might reflect remote player state. PlayerState should ideally reflect this.
+                            imageVector = if (playerState.isPlaying /* && !isCasting */ || isCasting /* && remoteIsPlaying */) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled,
                             contentDescription = if (playerState.isPlaying) "Pause" else "Play",
                             tint = Color.White,
-                            modifier = Modifier.fillMaxSize() // Make icon fill the IconButton
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
 
-                    IconButton(onClick = onSeekForward) {
+                    IconButton(onClick = onSeekForward, enabled = !isCasting /* Disable local seek if casting */) {
                         Icon(Icons.Default.FastForward, contentDescription = "Forward 10s", tint = Color.White, modifier = Modifier.size(36.dp))
                     }
-
-                    // Placeholder for Next Track/Episode
-                    // IconButton(onClick = { /* onNextEpisode?.invoke() */ }) {
-                    //     Icon(Icons.Default.SkipNext, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(36.dp))
-                    // }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Bottom Row for Fullscreen and Settings
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Placeholder for current playback speed display or other info
                     Text(
-                        text = if (playerState.isLoading && !playerState.isPlaying) "Buffering..." else "",
+                        text = if (playerState.isLoading && !playerState.isPlaying && !isCasting) "Buffering..."
+                               else if (isCasting) "Casting..." // Simple casting indicator
+                               else "",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.7f)
                     )
 
                     Row {
+                        if (isCastAvailable) {
+                            AndroidView(
+                                factory = { context ->
+                                    MediaRouteButton(context).apply {
+                                        CastButtonFactory.setUpMediaRouteButton(context, this)
+                                    }
+                                },
+                                modifier = Modifier.size(48.dp) // Standard IconButton size
+                            )
+                        }
                         IconButton(onClick = onSettingsClick) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings (Subtitles, Quality, Speed)", tint = Color.White)
                         }
                         IconButton(onClick = onFullScreenToggle) {
                             Icon(
-                                imageVector = if (false /* Replace with actual isFullScreen state from ViewModel */) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                imageVector = if (false /* uiState.isFullScreen */) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                                 contentDescription = "Toggle Fullscreen",
                                 tint = Color.White
                             )
@@ -184,12 +183,14 @@ fun PlayerControls(
 
 @Preview(showBackground = true, backgroundColor = 0xFF000000)
 @Composable
-fun PlayerControlsPreview_Playing() {
+fun PlayerControlsPreview_Playing_CastAvailable() {
     TomatoTheme {
         PlayerControls(
             isVisible = true,
             playerState = PlayerState(isPlaying = true, currentPositionMs = 30000, durationMs = 120000, isLoading = false),
             mediaTitle = "Big Buck Bunny",
+            isCastAvailable = true,
+            isCasting = false,
             onPlayPauseToggle = {}, onSeekForward = {}, onSeekBackward = {}, onSeekTo = {},
             onFullScreenToggle = {}, onSettingsClick = {}
         )
@@ -198,40 +199,30 @@ fun PlayerControlsPreview_Playing() {
 
 @Preview(showBackground = true, backgroundColor = 0xFF000000)
 @Composable
-fun PlayerControlsPreview_Paused() {
+fun PlayerControlsPreview_Playing_Casting() {
+    TomatoTheme {
+        PlayerControls(
+            isVisible = true,
+            playerState = PlayerState(isPlaying = true), // This state might reflect remote player
+            mediaTitle = "Casting Movie Title",
+            isCastAvailable = true,
+            isCasting = true,
+            onPlayPauseToggle = {}, onSeekForward = {}, onSeekBackward = {}, onSeekTo = {},
+            onFullScreenToggle = {}, onSettingsClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFF000000)
+@Composable
+fun PlayerControlsPreview_Paused_NoCast() {
     TomatoTheme {
         PlayerControls(
             isVisible = true,
             playerState = PlayerState(isPlaying = false, currentPositionMs = 0, durationMs = 300000, isLoading = false),
             mediaTitle = "Elephants Dream",
-            onPlayPauseToggle = {}, onSeekForward = {}, onSeekBackward = {}, onSeekTo = {},
-            onFullScreenToggle = {}, onSettingsClick = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF000000)
-@Composable
-fun PlayerControlsPreview_Buffering() {
-    TomatoTheme {
-        PlayerControls(
-            isVisible = true,
-            playerState = PlayerState(isPlaying = false, currentPositionMs = 10000, durationMs = 240000, isLoading = true),
-            mediaTitle = "Sintel",
-            onPlayPauseToggle = {}, onSeekForward = {}, onSeekBackward = {}, onSeekTo = {},
-            onFullScreenToggle = {}, onSettingsClick = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF000000)
-@Composable
-fun PlayerControlsPreview_NotVisible() {
-    TomatoTheme {
-         PlayerControls(
-            isVisible = false, // Main test here
-            playerState = PlayerState(isPlaying = true),
-            mediaTitle = "Should not be visible",
+            isCastAvailable = false,
+            isCasting = false,
             onPlayPauseToggle = {}, onSeekForward = {}, onSeekBackward = {}, onSeekTo = {},
             onFullScreenToggle = {}, onSettingsClick = {}
         )

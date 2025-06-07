@@ -3,27 +3,21 @@ package com.halibiram.tomato.feature.downloads.presentation.component
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.PauseCircle
-import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.* // Import all for convenience
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.vector.ImageVector
+// import androidx.compose.ui.layout.ContentScale // For AsyncImage if used
+// import androidx.compose.ui.platform.LocalContext // For AsyncImage if used
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-// import coil.compose.AsyncImage // If using Coil
-// import coil.request.ImageRequest // If using Coil
-import com.halibiram.tomato.core.database.entity.DownloadEntity // For status constants
-import com.halibiram.tomato.feature.downloads.presentation.UiDownloadItem
+// import coil.compose.AsyncImage // If using Coil for poster
+import com.halibiram.tomato.domain.model.Download
+import com.halibiram.tomato.domain.model.DownloadStatus
 import com.halibiram.tomato.ui.theme.TomatoTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -31,181 +25,216 @@ import java.util.Locale
 
 @Composable
 fun DownloadItem(
-    item: UiDownloadItem,
-    onItemClick: (mediaId: String, mediaType: String, status: String) -> Unit,
-    onCancelClick: (mediaId: String) -> Unit,
-    onPauseClick: (mediaId: String) -> Unit,
-    onResumeClick: (mediaId: String) -> Unit,
-    onDeleteClick: (mediaId: String, filePath: String?) -> Unit, // filePath might be part of UiDownloadItem or fetched
-    onRetryClick: (mediaId: String) -> Unit,
+    download: Download,
+    onPauseClick: (String) -> Unit,
+    onResumeClick: (Download) -> Unit,
+    onCancelClick: (String) -> Unit,
+    onDeleteClick: (Download) -> Unit, // Pass full Download object for context
+    onPlayClick: (Download) -> Unit,
+    onRetryClick: (Download) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val dateFormatter = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
+    val dateFormatter = remember { SimpleDateFormat("MMM dd, yyyy hh:mm a", Locale.getDefault()) }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onItemClick(item.mediaId, item.mediaType, item.downloadStatus) }
+            .clickable(enabled = download.status == DownloadStatus.COMPLETED) {
+                if (download.status == DownloadStatus.COMPLETED) onPlayClick(download)
+            }
             .padding(vertical = 4.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Placeholder for Image
-            // AsyncImage(
-            //     model = ImageRequest.Builder(LocalContext.current).data(item.posterPath).crossfade(true).build(),
-            //     contentDescription = item.title,
-            //     contentScale = ContentScale.Crop,
-            //     modifier = Modifier.size(70.dp, 100.dp).clip(MaterialTheme.shapes.medium)
-            // )
-            Box(
-                modifier = Modifier
-                    .size(70.dp, 100.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                if (item.posterPath == null) {
-                    Text("No Image", modifier = Modifier.align(Alignment.Center), style = MaterialTheme.typography.labelSmall)
-                }
-                // Else, AsyncImage would be here
-            }
-
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.title ?: "Unknown Title",
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Placeholder for Poster Image (using an Icon for now)
+                Icon(
+                    imageVector = if (download.mediaType == com.halibiram.tomato.domain.model.DownloadMediaType.MOVIE) Icons.Default.Movie else Icons.Default.Tv,
+                    contentDescription = download.mediaType.name,
+                    modifier = Modifier
+                        .size(60.dp) // Smaller size for list item icon
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(8.dp), // Padding inside background
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Status: ${item.downloadStatus}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (item.downloadStatus == DownloadEntity.STATUS_DOWNLOADING || item.downloadStatus == DownloadEntity.STATUS_PAUSED) {
-                    LinearProgressIndicator(
-                        progress = item.progressPercentage / 100f,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                    )
+                // If using Coil for poster:
+                // AsyncImage(
+                // model = download.posterPath,
+                // contentDescription = download.title,
+                // contentScale = ContentScale.Crop,
+                // modifier = Modifier.size(70.dp, 100.dp).clip(MaterialTheme.shapes.medium)
+                // )
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "${formatBytes(item.downloadedSizeBytes)} / ${formatBytes(item.downloadSizeBytes)} (${item.progressPercentage}%)",
-                        style = MaterialTheme.typography.labelMedium
+                        text = download.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                } else if (item.downloadStatus == DownloadEntity.STATUS_COMPLETED) {
-                     Text(
-                        text = "Size: ${formatBytes(item.downloadSizeBytes)}",
-                        style = MaterialTheme.typography.labelMedium
+                    Spacer(modifier = Modifier.height(4.dp))
+                    StatusAndProgress(download) // Extracted for clarity
+                    Text(
+                        text = "Added: ${dateFormatter.format(Date(download.addedDate))}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            ActionButtons(download, onPauseClick, onResumeClick, onCancelClick, onDeleteClick, onPlayClick, onRetryClick)
+        }
+    }
+}
+
+@Composable
+private fun StatusAndProgress(download: Download) {
+    Column {
+        Text(
+            text = "Status: ${download.status.name.replace('_', ' ').lowercase().capitalize()}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (download.status == DownloadStatus.DOWNLOADING || download.status == DownloadStatus.PAUSED) {
+            LinearProgressIndicator(
+                progress = { download.progress / 100f }, // For M3 LinearProgressIndicator
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
-                    text = "Added: ${dateFormatter.format(item.addedDate)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "${formatBytes(download.downloadedSizeBytes)} / ${formatBytes(download.totalSizeBytes)}",
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Text(
+                    text = "${download.progress}%",
+                    style = MaterialTheme.typography.labelMedium
                 )
             }
+        } else if (download.status == DownloadStatus.COMPLETED) {
+            Text(
+                text = "Size: ${formatBytes(download.totalSizeBytes)}",
+                style = MaterialTheme.typography.labelMedium
+            )
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.width(8.dp)) // Space before action icons
-
-            // Action Buttons Column
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                when (item.downloadStatus) {
-                    DownloadEntity.STATUS_DOWNLOADING -> {
-                        IconButton(onClick = { onPauseClick(item.mediaId) }) {
-                            Icon(Icons.Default.PauseCircle, contentDescription = "Pause Download")
-                        }
-                        IconButton(onClick = { onCancelClick(item.mediaId) }) {
-                            Icon(Icons.Default.Cancel, contentDescription = "Cancel Download")
-                        }
-                    }
-                    DownloadEntity.STATUS_PAUSED -> {
-                        IconButton(onClick = { onResumeClick(item.mediaId) }) {
-                            Icon(Icons.Default.PlayCircle, contentDescription = "Resume Download")
-                        }
-                        IconButton(onClick = { onCancelClick(item.mediaId) }) {
-                            Icon(Icons.Default.Cancel, contentDescription = "Cancel Download")
-                        }
-                    }
-                    DownloadEntity.STATUS_COMPLETED -> {
-                        IconButton(onClick = { /* Implemented by onItemClick to play */ }) {
-                             Icon(Icons.Default.PlayCircle, contentDescription = "Play Downloaded Item", tint = MaterialTheme.colorScheme.primary)
-                        }
-                        IconButton(onClick = { onDeleteClick(item.mediaId, null /* TODO: pass file path */) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete Download")
-                        }
-                    }
-                    DownloadEntity.STATUS_FAILED -> {
-                        IconButton(onClick = { onRetryClick(item.mediaId) }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Retry Download")
-                        }
-                        IconButton(onClick = { onDeleteClick(item.mediaId, null) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete Download")
-                        }
-                    }
-                    DownloadEntity.STATUS_PENDING -> {
-                         IconButton(onClick = { onCancelClick(item.mediaId) }) {
-                            Icon(Icons.Default.Cancel, contentDescription = "Cancel Download")
-                        }
-                    }
-                     // STATUS_CANCELLED could just show a delete button or be removed from list quickly
-                    DownloadEntity.STATUS_CANCELLED -> {
-                        IconButton(onClick = { onDeleteClick(item.mediaId, null) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Remove from list")
-                        }
-                    }
-                }
+@Composable
+private fun ActionButtons(
+    download: Download,
+    onPause: (String) -> Unit,
+    onResume: (Download) -> Unit,
+    onCancel: (String) -> Unit,
+    onDelete: (Download) -> Unit,
+    onPlay: (Download) -> Unit,
+    onRetry: (Download) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End, // Align buttons to the end
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        when (download.status) {
+            DownloadStatus.DOWNLOADING -> {
+                ActionButton("Pause", Icons.Default.Pause, onClick = { onPause(download.id) })
+                ActionButton("Cancel", Icons.Default.Cancel, onClick = { onCancel(download.id) })
+            }
+            DownloadStatus.PAUSED -> {
+                ActionButton("Resume", Icons.Default.PlayArrow, onClick = { onResume(download) })
+                ActionButton("Cancel", Icons.Default.Cancel, onClick = { onCancel(download.id) })
+            }
+            DownloadStatus.COMPLETED -> {
+                ActionButton("Play", Icons.Default.PlayCircleFilled, isPrimary = true, onClick = { onPlay(download) })
+                ActionButton("Delete", Icons.Default.DeleteOutline, onClick = { onDelete(download) })
+            }
+            DownloadStatus.FAILED -> {
+                ActionButton("Retry", Icons.Default.Refresh, onClick = { onRetry(download) })
+                ActionButton("Delete", Icons.Default.DeleteOutline, onClick = { onDelete(download) })
+            }
+            DownloadStatus.PENDING -> {
+                // Text("Queued...", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 8.dp))
+                ActionButton("Cancel", Icons.Default.Cancel, onClick = { onCancel(download.id) })
+            }
+            DownloadStatus.CANCELLED -> {
+                ActionButton("Delete", Icons.Default.DeleteOutline, onClick = { onDelete(download) })
             }
         }
     }
 }
 
-fun formatBytes(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val k = bytes / 1024
-    if (k < 1024) return "$k KB"
-    val m = k / 1024
-    if (m < 1024) return "$m MB"
-    val g = m / 1024
-    return "$g GB"
+@Composable
+private fun ActionButton(
+    text: String,
+    icon: ImageVector,
+    isPrimary: Boolean = false,
+    onClick: () -> Unit
+) {
+    TextButton(onClick = onClick) {
+        Icon(icon, contentDescription = text, modifier = Modifier.size(ButtonDefaults.IconSize))
+        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+        Text(text, color = if (isPrimary) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+    }
 }
 
-@Preview(showBackground = true)
+
+fun formatBytes(bytes: Long): String {
+    if (bytes < 0) return "0 B"
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return "%.1f KB".format(kb)
+    val mb = kb / 1024.0
+    if (mb < 1024) return "%.1f MB".format(mb)
+    val gb = mb / 1024.0
+    return "%.1f GB".format(gb)
+}
+
+// --- Previews ---
+@Preview(showBackground = true, widthDp = 360)
 @Composable
 fun DownloadItemPreview_Downloading() {
-    val item = UiDownloadItem("1", "Movie Title Downloading", null, 1000, 500, 50, DownloadEntity.STATUS_DOWNLOADING, Date(), "movie")
-    TomatoTheme {
-        DownloadItem(item, {}, {}, {}, {}, { _, _ -> }, {})
-    }
+    val item = Download("d1", "m1", DownloadMediaType.MOVIE, "Movie Downloading", "url", DownloadStatus.DOWNLOADING, 50, null, 100000000, 50000000, System.currentTimeMillis())
+    TomatoTheme { Surface { DownloadItem(item, {}, {}, {}, {}, {}, {}) } }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, widthDp = 360)
 @Composable
 fun DownloadItemPreview_Completed() {
-    val item = UiDownloadItem("2", "Series Episode Completed", "path/to/poster.jpg", 1000, 1000, 100, DownloadEntity.STATUS_COMPLETED, Date(), "episode")
-    TomatoTheme {
-        DownloadItem(item, { _, _, _ -> }, {}, {}, {}, { _, _ -> }, {})
-    }
+    val item = Download("d2", "e1", DownloadMediaType.SERIES_EPISODE, "Episode Completed", "url", DownloadStatus.COMPLETED, 100, "/path/file.mp4", 20000000, 20000000, System.currentTimeMillis())
+    TomatoTheme { Surface { DownloadItem(item, {}, {}, {}, {}, {}, {}) } }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, widthDp = 360)
 @Composable
 fun DownloadItemPreview_Failed() {
-    val item = UiDownloadItem("3", "Failed Movie", null, 1000, 0, 0, DownloadEntity.STATUS_FAILED, Date(), "movie")
-    TomatoTheme {
-        DownloadItem(item, { _, _, _ -> }, {}, {}, {}, { _, _ -> }, {})
-    }
+    val item = Download("d3", "m2", DownloadMediaType.MOVIE, "Movie Failed To Download Very Long Title Example", "url", DownloadStatus.FAILED, 0, null, 150000000, 0, System.currentTimeMillis())
+    TomatoTheme { Surface { DownloadItem(item, {}, {}, {}, {}, {}, {}) } }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, widthDp = 360)
 @Composable
 fun DownloadItemPreview_Paused() {
-    val item = UiDownloadItem("4", "Paused Show Download", null, 2000, 800, 40, DownloadEntity.STATUS_PAUSED, Date(), "episode")
-    TomatoTheme {
-        DownloadItem(item, { _, _, _ -> }, {}, {}, {}, { _, _ -> }, {})
-    }
+    val item = Download("d4", "m3", DownloadMediaType.MOVIE, "Paused Download", "url", DownloadStatus.PAUSED, 25, null, 300000000, 75000000, System.currentTimeMillis())
+    TomatoTheme { Surface { DownloadItem(item, {}, {}, {}, {}, {}, {}) } }
+}
+
+@Preview(showBackground = true, widthDp = 360)
+@Composable
+fun DownloadItemPreview_Pending() {
+    val item = Download("d5", "m4", DownloadMediaType.MOVIE, "Download Is Pending", "url", DownloadStatus.PENDING, 0, null, 0, 0, System.currentTimeMillis())
+    TomatoTheme { Surface { DownloadItem(item, {}, {}, {}, {}, {}, {}) } }
+}
+
+@Preview(showBackground = true, widthDp = 360)
+@Composable
+fun DownloadItemPreview_Cancelled() {
+    val item = Download("d6", "m5", DownloadMediaType.MOVIE, "Cancelled Download", "url", DownloadStatus.CANCELLED, 30, null, 100, 30, System.currentTimeMillis())
+    TomatoTheme { Surface { DownloadItem(item, {}, {}, {}, {}, {}, {}) } }
 }

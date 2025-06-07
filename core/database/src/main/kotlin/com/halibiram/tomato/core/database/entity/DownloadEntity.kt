@@ -3,40 +3,36 @@ package com.halibiram.tomato.core.database.entity
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverters
-import com.halibiram.tomato.core.database.converter.DateConverter
-import java.util.Date // Make sure this is java.util.Date if DateConverter expects it
+import com.halibiram.tomato.core.database.converter.DateConverter // Not used if storing Long timestamps
 
-// Re-aligning with domain model Download.kt which has DownloadStatus and DownloadMediaType enums.
-// For Room, enums are often stored as Strings or Ints. Let's use String here.
+// Using Long for timestamps directly (System.currentTimeMillis())
+// Using Long for sizes in bytes for precision. UI layer can convert to MB/GB.
 
 @Entity(tableName = "downloads")
-@TypeConverters(DateConverter::class) // For addedDate and completedDate
+// @TypeConverters(DateConverter::class) // Only if using java.util.Date for timestamps
 data class DownloadEntity(
     @PrimaryKey
-    val id: String, // Unique ID for the download task itself
-    val mediaId: String, // ID of the movie or episode
-    val mediaType: String, // Store enum name: "MOVIE", "SERIES_EPISODE"
+    val id: String, // Unique ID for the download task (e.g., mediaId or UUID if one media can have multiple download attempts)
+    val mediaId: String, // ID of the movie or episode from its source
+    val mediaType: String, // Domain model's DownloadMediaType enum name: "MOVIE", "SERIES_EPISODE"
     val title: String,
-    val downloadUrl: String, // URL from which media is downloaded (can be temporary)
-    val status: String, // Store enum name: "PENDING", "DOWNLOADING", etc.
+    val downloadUrl: String, // URL from which media is downloaded
+    val filePath: String?, // Path to the downloaded file on device
+    val status: String, // Domain model's DownloadStatus enum name: "PENDING", "DOWNLOADING", etc.
     val progress: Int, // Percentage 0-100
-    val filePath: String?, // Path to the downloaded file
-    val totalSizeBytes: Long = 0,
-    val downloadedSizeBytes: Long = 0,
-    val addedDate: Long = System.currentTimeMillis(), // Using Long for timestamp directly
-    val posterPath: String? = null,
+    val totalSizeBytes: Long?, // Total size of the file in bytes, nullable if not yet known
+    val downloadedSizeBytes: Long?, // Bytes downloaded so far, nullable if not started
+    val addedDateTimestamp: Long = System.currentTimeMillis(), // Timestamp when download was added
+    val completedDateTimestamp: Long? = null, // Timestamp when download completed
+    val posterPath: String? = null, // Optional: for UI
 
-    // Fields from old DownloadEntity that might be useful if not flattening too much:
-    val downloadSpeedBps: Long = 0, // Bytes per second - maybe track this dynamically, not store
-    val completedDate: Long? = null, // Timestamp
-    val seriesIdForEpisode: String? = null, // If mediaType is SERIES_EPISODE, this can be useful
+    // Optional fields for richer context, especially for series episodes
+    val seriesIdForEpisode: String? = null,
     val seasonNumberForEpisode: Int? = null,
     val episodeNumberForEpisode: Int? = null
 ) {
-    // Companion object with status constants was in old entity,
-    // now these would map to the domain layer DownloadStatus enum values.
-    // For direct usage in DAO queries if needed:
     companion object {
+        // Status constants mirroring domain enum for DAO queries if needed, though direct enum.name is preferred
         const val STATUS_PENDING = "PENDING"
         const val STATUS_DOWNLOADING = "DOWNLOADING"
         const val STATUS_COMPLETED = "COMPLETED"

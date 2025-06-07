@@ -1,11 +1,12 @@
 package com.halibiram.tomato.core.player.exoplayer
 
 import android.content.Context
-import androidx.media3.common.C // For C.TRACK_TYPE_TEXT
+import androidx.media3.common.C // For C.TRACK_TYPE_TEXT, C.TRACK_TYPE_AUDIO
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackGroup
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
@@ -25,7 +26,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
-@Singleton // Assuming TomatoExoPlayer might be a singleton or scoped if player persists
+@Singleton
 class TomatoExoPlayer @Inject constructor(@ApplicationContext private val context: Context) {
 
     val exoPlayer: ExoPlayer = ExoPlayer.Builder(context).build()
@@ -34,13 +35,13 @@ class TomatoExoPlayer @Inject constructor(@ApplicationContext private val contex
     val playerStateFlow: StateFlow<PlayerState> = _playerState.asStateFlow()
 
     private var positionUpdateJob: Job? = null
-    // Use SupervisorJob so if one child coroutine fails, it doesn't cancel the whole scope
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    // Public accessor for the ExoPlayer instance
     fun getExoPlayerInstance(): ExoPlayer = exoPlayer
 
     init {
+        // Initialize with default track selection parameters
+        _playerState.update { it.copy(trackSelectionParameters = exoPlayer.trackSelectionParameters) }
         setupPlayerListener()
     }
 
@@ -60,7 +61,6 @@ class TomatoExoPlayer @Inject constructor(@ApplicationContext private val contex
                     it.copy(
                         playbackState = playbackState,
                         isLoading = playbackState == Player.STATE_BUFFERING,
-                        // Update duration here as it might become available when ready
                         durationMs = if (exoPlayer.duration > 0) exoPlayer.duration else it.durationMs
                     )
                 }
@@ -75,19 +75,32 @@ class TomatoExoPlayer @Inject constructor(@ApplicationContext private val contex
             }
 
             override fun onTimelineChanged(timeline: Player.Timeline, reason: Int) {
-                if (!timeline.isEmpty && exoPlayer.duration > 0) { // Check if duration is positive
+                if (!timeline.isEmpty && exoPlayer.duration > 0) {
                     _playerState.update { it.copy(durationMs = exoPlayer.duration) }
                 }
             }
 
             override fun onTracksChanged(tracks: Tracks) {
                 val subtitleTrackGroups = mutableListOf<TrackGroup>()
+                val audioTrackGroups = mutableListOf<TrackGroup>()
+
                 for (groupInfo in tracks.groups) {
-                    if (groupInfo.type == C.TRACK_TYPE_TEXT && groupInfo.isSupported) {
-                        subtitleTrackGroups.add(groupInfo.mediaTrackGroup)
+                    if (groupInfo.isSupported) { // Consider only supported tracks
+                        when (groupInfo.type) {
+                            C.TRACK_TYPE_TEXT -> subtitleTrackGroups.add(groupInfo.mediaTrackGroup)
+                            C.TRACK_TYPE_AUDIO -> audioTrackGroups.add(groupInfo.mediaTrackGroup)
+                        }
                     }
                 }
-                _playerState.update { it.copy(availableSubtitleTracks = subtitleTrackGroups) }
+                _playerState.update {
+                    it.copy(
+                        availableSubtitleTracks = subtitleTrackGroups,
+                        availableAudioTracks = audioTrackGroups,
+                        // Update selected tracks based on current parameters if needed,
+                        // or rely on onTrackSelectionParametersChanged
+                        trackSelectionParameters = exoPlayer.trackSelectionParameters
+                    )
+                }
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -95,15 +108,13 @@ class TomatoExoPlayer @Inject constructor(@ApplicationContext private val contex
             }
 
             override fun onTrackSelectionParametersChanged(parameters: TrackSelectionParameters) {
-                 // Check if text tracks are disabled or a specific one is selected
-                _playerState.update { it.copy(selectedSubtitleTrackParameters = parameters) }
+                _playerState.update { it.copy(trackSelectionParameters = parameters) }
             }
         })
     }
 
-    // MediaSourceFactory will be injected into PlayerManager, which then passes it here.
     fun prepareMedia(mediaUrl: String, playWhenReady: Boolean, mediaSourceFactory: MediaSourceFactory) {
-        _playerState.update { PlayerState(isLoading = true) } // Reset to a clean loading state
+        _playerState.update { PlayerState(isLoading = true, trackSelectionParameters = exoPlayer.trackSelectionParameters) }
         try {
             val mediaSource = mediaSourceFactory.createMediaSource(mediaUrl)
             exoPlayer.setMediaSource(mediaSource)
@@ -125,69 +136,58 @@ class TomatoExoPlayer @Inject constructor(@ApplicationContext private val contex
     fun seekTo(positionMs: Long) {
         val validPosition = positionMs.coerceIn(0L, exoPlayer.duration.coerceAtLeast(0L))
         exoPlayer.seekTo(validPosition)
-        // Update state immediately for responsiveness, listener will also update
         _playerState.update { it.copy(currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)) }
     }
 
     fun releasePlayer() {
         stopPositionUpdates()
-        coroutineScope.coroutineContext.cancelChildren() // Cancel jobs in this scope
+        coroutineScope.coroutineContext.cancelChildren()
         exoPlayer.release()
     }
 
-    fun setSubtitleTrack(trackIndex: Int, groupIndex: Int, parameters: TrackSelectionParameters.Builder? = null) {
-        val trackSelectionBuilder = parameters ?: exoPlayer.trackSelectionParameters.buildUpon()
-
-        // Find the correct TrackGroup based on available tracks
-        val availableTracks = exoPlayer.currentTracks
-        var actualGroupIndex = -1
-        var textGroupCount = 0
-        for(i in 0 until availableTracks.groups.size) {
-            if(availableTracks.groups[i].type == C.TRACK_TYPE_TEXT) {
-                if(textGroupCount == groupIndex) {
-                    actualGroupIndex = i
-                    break
-                }
-                textGroupCount++
-            }
-        }
-
-        if (actualGroupIndex != -1) {
-            val trackGroup = availableTracks.groups[actualGroupIndex].mediaTrackGroup
-            trackSelectionBuilder
-                .clearOverridesOfType(C.TRACK_TYPE_TEXT) // Clear previous text track overrides
-                .addOverride(TrackSelectionParameters.TrackSelectionOverride(trackGroup, trackIndex))
-                .setTrackSelectionDisabled(C.TRACK_TYPE_TEXT, false) // Ensure text tracks are enabled
-        } else {
-            // Track group not found, disable subtitles
-            trackSelectionBuilder.setTrackSelectionDisabled(C.TRACK_TYPE_TEXT, true)
-        }
-        exoPlayer.trackSelectionParameters = trackSelectionBuilder.build()
+    fun selectSubtitleTrack(trackGroup: TrackGroup, trackIndex: Int) {
+        val override = TrackSelectionOverride(trackGroup, listOf(trackIndex))
+        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+            .buildUpon()
+            .setOverrideForType(override)
+            .setTrackSelectionDisabled(trackGroup.type, false) // Ensure text tracks are enabled
+            .build()
     }
 
-    fun clearSubtitleTrack() {
+    fun clearSubtitleTrack() { // Keep this specific version for clarity from ViewModel
+        // To disable subtitles, we clear overrides for text tracks and disable the type.
         val parametersBuilder = exoPlayer.trackSelectionParameters.buildUpon()
         parametersBuilder.clearOverridesOfType(C.TRACK_TYPE_TEXT)
         parametersBuilder.setTrackSelectionDisabled(C.TRACK_TYPE_TEXT, true)
         exoPlayer.trackSelectionParameters = parametersBuilder.build()
     }
 
-    fun getAvailableSubtitleTracks(): List<TrackGroup> {
-        val trackGroups = exoPlayer.currentTracks.groups
-        val subtitleTrackGroups = mutableListOf<TrackGroup>()
-        for (i in 0 until trackGroups.size) {
-            if (trackGroups[i].type == C.TRACK_TYPE_TEXT && trackGroups[i].isSupported) {
-                subtitleTrackGroups.add(trackGroups[i].mediaTrackGroup)
-            }
-        }
-        return subtitleTrackGroups
+    fun selectAudioTrack(trackGroup: TrackGroup, trackIndex: Int) {
+        val override = TrackSelectionOverride(trackGroup, listOf(trackIndex))
+        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+            .buildUpon()
+            .setOverrideForType(override)
+            .setTrackSelectionDisabled(trackGroup.type, false) // Ensure audio tracks are enabled (usually by default)
+            .build()
     }
+
+    // This might not be needed if selecting another audio track implicitly clears the previous one,
+    // or if default behavior is desired. Typically, one audio track is always active.
+    // fun clearAudioTrack(trackGroup: TrackGroup) {
+    //     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+    //         .buildUpon()
+    //         .clearTrackSelectionOverrides(trackGroup.mediaTrackGroup)
+    //         .build()
+    // }
+
+    // getAvailableSubtitleTracks and getAvailableAudioTracks are now implicitly handled by
+    // playerStateFlow.value.availableSubtitleTracks and playerStateFlow.value.availableAudioTracks
 
     private fun startPositionUpdates() {
         stopPositionUpdates()
         positionUpdateJob = coroutineScope.launch {
-            while (isActive) { // Loop while coroutine is active
-                if (exoPlayer.isPlaying) { // Only update if playing
+            while (isActive) {
+                if (exoPlayer.isPlaying) {
                     _playerState.update {
                         it.copy(currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L))
                     }

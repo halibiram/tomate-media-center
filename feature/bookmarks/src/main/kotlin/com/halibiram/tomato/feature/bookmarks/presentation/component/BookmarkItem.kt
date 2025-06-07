@@ -1,24 +1,29 @@
 package com.halibiram.tomato.feature.bookmarks.presentation.component
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Movie // For Movie type
+import androidx.compose.material.icons.filled.Tv // For Series type
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-// import coil.compose.AsyncImage // If using Coil
-// import coil.request.ImageRequest // If using Coil
-import com.halibiram.tomato.core.database.entity.BookmarkEntity
-import com.halibiram.tomato.feature.bookmarks.presentation.UiBookmarkItem
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.halibiram.tomato.domain.model.Bookmark
+import com.halibiram.tomato.domain.model.BookmarkMediaType
 import com.halibiram.tomato.ui.theme.TomatoTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -26,9 +31,9 @@ import java.util.Locale
 
 @Composable
 fun BookmarkItem(
-    item: UiBookmarkItem,
-    onItemClick: (mediaId: String, mediaType: String) -> Unit,
-    onRemoveClick: (mediaId: String) -> Unit,
+    bookmark: Bookmark,
+    onRemoveClick: (mediaId: String, mediaType: BookmarkMediaType) -> Unit,
+    onItemClick: (bookmark: Bookmark) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val dateFormatter = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
@@ -36,7 +41,7 @@ fun BookmarkItem(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onItemClick(item.mediaId, item.mediaType) }
+            .clickable { onItemClick(bookmark) }
             .padding(vertical = 4.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
@@ -44,51 +49,78 @@ fun BookmarkItem(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Placeholder for Image
-            // AsyncImage(
-            //     model = ImageRequest.Builder(LocalContext.current).data(item.posterPath).crossfade(true).build(),
-            //     contentDescription = item.title,
-            //     contentScale = ContentScale.Crop,
-            //     modifier = Modifier.size(80.dp, 120.dp).clip(MaterialTheme.shapes.medium) // Adjusted size
-            // )
             Box(
                 modifier = Modifier
-                    .size(80.dp, 120.dp) // Standard poster aspect ratio
+                    .width(80.dp)
+                    .aspectRatio(2f / 3f) // Poster aspect ratio
                     .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
             ) {
-                 if (item.posterPath == null) {
-                    Text("No Image", modifier = Modifier.align(Alignment.Center), style = MaterialTheme.typography.labelSmall)
+                if (bookmark.posterUrl.isNullOrBlank()) {
+                    Icon(
+                        imageVector = when (bookmark.mediaType) {
+                            BookmarkMediaType.MOVIE -> Icons.Filled.Movie
+                            BookmarkMediaType.SERIES -> Icons.Filled.Tv
+                        },
+                        contentDescription = bookmark.mediaType.name,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(bookmark.posterUrl)
+                            .crossfade(true)
+                            // .placeholder(R.drawable.placeholder_poster) // Optional
+                            // .error(R.drawable.error_poster) // Optional
+                            .build(),
+                        contentDescription = bookmark.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
-                // Else, AsyncImage would be here
             }
+
 
             Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.title ?: "Unknown Title",
+                    text = bookmark.title ?: "Unknown Title",
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2, // Allow more lines for titles
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Type: ${item.mediaType.capitalize()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = when (bookmark.mediaType) {
+                            BookmarkMediaType.MOVIE -> Icons.Filled.Movie
+                            BookmarkMediaType.SERIES -> Icons.Filled.Tv
+                        },
+                        contentDescription = bookmark.mediaType.name,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = bookmark.mediaType.name.lowercase().replaceFirstChar { it.titlecase() },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Bookmarked: ${dateFormatter.format(item.bookmarkedDate)}",
+                    text = "Bookmarked: ${dateFormatter.format(Date(bookmark.addedDate))}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp)) // Space before action icon
+            Spacer(modifier = Modifier.width(8.dp))
 
-            IconButton(onClick = { onRemoveClick(item.mediaId) }) {
+            IconButton(onClick = { onRemoveClick(bookmark.mediaId, bookmark.mediaType) }) {
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = "Remove Bookmark",
@@ -102,29 +134,33 @@ fun BookmarkItem(
 @Preview(showBackground = true)
 @Composable
 fun BookmarkItemPreview_Movie() {
-    val item = UiBookmarkItem(
+    val item = Bookmark(
         mediaId = "movie1",
         title = "The Best Movie Ever Made This Year",
-        posterPath = "/path/to/poster.jpg",
-        mediaType = BookmarkEntity.TYPE_MOVIE,
-        bookmarkedDate = Date()
+        posterUrl = "https://example.com/poster.jpg", // Will not load in preview without internet & Coil setup for preview
+        mediaType = BookmarkMediaType.MOVIE,
+        addedDate = System.currentTimeMillis()
     )
     TomatoTheme {
-        BookmarkItem(item = item, onItemClick = { _, _ -> }, onRemoveClick = {})
+        Box(modifier=Modifier.padding(8.dp)) {
+            BookmarkItem(item = item, onItemClick = { _ -> }, onRemoveClick = { _, _ -> })
+        }
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun BookmarkItemPreview_Series() {
-    val item = UiBookmarkItem(
+fun BookmarkItemPreview_Series_NoPoster() {
+    val item = Bookmark(
         mediaId = "series1",
-        title = "An Incredible Series About Everything",
-        posterPath = null, // Test with no poster
-        mediaType = BookmarkEntity.TYPE_SERIES,
-        bookmarkedDate = Date(System.currentTimeMillis() - 100000000) // An older date
+        title = "An Incredible Series About Everything And More With A Very Long Title",
+        posterUrl = null,
+        mediaType = BookmarkMediaType.SERIES,
+        addedDate = System.currentTimeMillis() - 100000000
     )
     TomatoTheme {
-        BookmarkItem(item = item, onItemClick = { _, _ -> }, onRemoveClick = {})
+         Box(modifier=Modifier.padding(8.dp)) {
+            BookmarkItem(item = item, onItemClick = { _ -> }, onRemoveClick = { _, _ -> })
+        }
     }
 }

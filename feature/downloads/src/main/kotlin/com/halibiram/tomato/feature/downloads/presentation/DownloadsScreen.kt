@@ -5,26 +5,29 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DeleteSweep // For clear all
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.halibiram.tomato.core.database.entity.DownloadEntity
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.halibiram.tomato.domain.model.Download // Domain model
+import com.halibiram.tomato.domain.model.DownloadStatus
 import com.halibiram.tomato.feature.downloads.presentation.component.DownloadItem
-import com.halibiram.tomato.ui.theme.TomatoTheme
-import java.util.Date
+import com.halibiram.tomato.ui.theme.TomatoTheme // Ensure this path is correct
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(
-    // viewModel: DownloadsViewModel = hiltViewModel(), // With Hilt
-    viewModel: DownloadsViewModel, // Pass for preview or non-Hilt
+    viewModel: DownloadsViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit,
-    onNavigateToPlayer: (mediaId: String, mediaType: String) -> Unit
+    onNavigateToPlayer: (mediaId: String, mediaType: String, filePath: String) -> Unit // Added filePath
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showClearAllDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -34,19 +37,22 @@ fun DownloadsScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    if (uiState.downloads.isNotEmpty()) {
+                        IconButton(onClick = { showClearAllDialog = true }) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = "Clear All Downloads")
+                        }
+                    }
                 }
-                // You could add filter actions here if desired
             )
         }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            DownloadFilters(
-                currentFilter = uiState.currentFilter,
-                onFilterChange = viewModel::onFilterChange,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
+            // TODO: Implement filter UI if needed, e.g., using uiState.currentFilter and viewModel.onFilterChange
+            // DownloadFilters(...)
 
-            if (uiState.isLoading) {
+            if (uiState.isLoading && uiState.downloads.isEmpty()) { // Show loading only if list is empty initially
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
@@ -56,94 +62,90 @@ fun DownloadsScreen(
                 }
             } else if (uiState.downloads.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                    Text("No downloads found${if (uiState.currentFilter != "ALL") " for this filter" else ""}.")
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("No downloads yet.")
+                        // Optionally, a button to browse content to download
+                    }
                 }
             } else {
                 LazyColumn(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(uiState.downloads, key = { it.mediaId }) { download ->
+                    items(uiState.downloads, key = { it.id }) { download ->
                         DownloadItem(
-                            item = download,
-                            onItemClick = { mediaId, mediaType, status ->
-                                if (status == DownloadEntity.STATUS_COMPLETED) {
-                                    onNavigateToPlayer(mediaId, mediaType)
-                                } else {
-                                    // Handle click on non-completed items, e.g., show details or toast
+                            download = download,
+                            onPauseClick = { viewModel.pauseDownload(download.id) },
+                            onResumeClick = { viewModel.resumeDownload(download) },
+                            onCancelClick = { viewModel.cancelDownload(download.id) },
+                            onDeleteClick = { viewModel.deleteDownload(download) },
+                            onPlayClick = {
+                                if (download.status == DownloadStatus.COMPLETED && download.filePath != null) {
+                                    onNavigateToPlayer(download.mediaId, download.mediaType.name, download.filePath)
                                 }
+                                // Else, could show a toast or disable play button
                             },
-                            onCancelClick = viewModel::cancelDownload,
-                            onPauseClick = viewModel::pauseDownload,
-                            onResumeClick = viewModel::resumeDownload,
-                            onDeleteClick = { mediaId, _ -> viewModel.deleteDownload(mediaId, null /* path TODO */) },
-                            onRetryClick = viewModel::retryDownload
+                            onRetryClick = { viewModel.retryDownload(download) }
                         )
                     }
                 }
             }
         }
-    }
-}
 
-@Composable
-fun DownloadFilters(
-    currentFilter: String,
-    onFilterChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val filters = listOf("ALL", DownloadEntity.STATUS_DOWNLOADING, DownloadEntity.STATUS_COMPLETED, DownloadEntity.STATUS_FAILED) // Add more as needed
-    var expanded by remember { mutableStateOf(false) }
-
-    Box(modifier = modifier.fillMaxWidth()) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Filter: $currentFilter")
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            filters.forEach { filter ->
-                DropdownMenuItem(
-                    text = { Text(filter.replace("_", " ").capitalize()) },
-                    onClick = {
-                        onFilterChange(filter)
-                        expanded = false
-                    }
-                )
-            }
+        if (showClearAllDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearAllDialog = false },
+                title = { Text("Clear All Downloads?") },
+                text = { Text("Are you sure you want to delete all download records? This action might not delete the files themselves unless explicitly handled.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            // viewModel.clearAllDownloads() // TODO: Implement this in ViewModel and UseCase
+                            showClearAllDialog = false
+                        }
+                    ) { Text("Clear All", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearAllDialog = false }) { Text("Cancel") }
+                }
+            )
         }
     }
 }
 
-
+// Preview needs a fake ViewModel or Hilt setup for previews
 @Preview(showBackground = true)
 @Composable
 fun DownloadsScreenPreview_Empty() {
-    val emptyVM = DownloadsViewModel() // Default state might be loading or empty
+    val mockViewModel: DownloadsViewModel = mockk(relaxed = true)
+    every { mockViewModel.uiState } returns MutableStateFlow(DownloadsUiState(isLoading = false, downloads = emptyList()))
     TomatoTheme {
-        DownloadsScreen(viewModel = emptyVM, onNavigateBack = {}, onNavigateToPlayer = { _, _ -> })
+        DownloadsScreen(
+            viewModel = mockViewModel,
+            onNavigateBack = {},
+            onNavigateToPlayer = { _, _, _ -> }
+        )
     }
 }
 
 @Preview(showBackground = true)
 @Composable
 fun DownloadsScreenPreview_WithItems() {
-    val vmWithItems = DownloadsViewModel().apply {
-        // Simulate having items (ViewModel needs modification for easy preview state setting)
-        // _uiState.value = DownloadsUiState(
-        //     isLoading = false,
-        //     downloads = listOf(
-        //         UiDownloadItem("m1", "Movie 1", null, 1L, 1L, 100, DownloadEntity.STATUS_COMPLETED, Date(), "movie"),
-        //         UiDownloadItem("e1", "Episode 1", null, 2L, 1L, 50, DownloadEntity.STATUS_DOWNLOADING, Date(), "episode")
-        //     )
-        // )
-    }
+     val mockViewModel: DownloadsViewModel = mockk(relaxed = true)
+    val sampleDownloads = listOf(
+        Download("1", "m1", com.halibiram.tomato.domain.model.DownloadMediaType.MOVIE, "Movie Title 1", "url1", DownloadStatus.DOWNLOADING, 50, null, 100MB, 50MB, System.currentTimeMillis()),
+        Download("2", "e1", com.halibiram.tomato.domain.model.DownloadMediaType.SERIES_EPISODE, "S01E01 - Episode Title", "url2", DownloadStatus.COMPLETED, 100, "/path/to/file.mp4", 200MB, 200MB, System.currentTimeMillis() - 100000)
+    )
+    every { mockViewModel.uiState } returns MutableStateFlow(DownloadsUiState(isLoading = false, downloads = sampleDownloads))
+
     TomatoTheme {
-        DownloadsScreen(viewModel = vmWithItems, onNavigateBack = {}, onNavigateToPlayer = {_,_ ->})
+        DownloadsScreen(
+            viewModel = mockViewModel,
+            onNavigateBack = {},
+            onNavigateToPlayer = { _, _, _ -> }
+        )
     }
 }
+
+// Helper for preview sizes
+private val Long.MB: Long get() = this * 1024 * 1024

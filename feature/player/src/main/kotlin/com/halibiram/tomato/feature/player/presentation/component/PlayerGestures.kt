@@ -2,84 +2,57 @@ package com.halibiram.tomato.feature.player.presentation.component
 
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope // Required for content lambda
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+// import androidx.compose.runtime.rememberCoroutineScope // Not strictly needed in this version
+// import kotlinx.coroutines.Job // Not strictly needed in this version
+// import kotlinx.coroutines.delay // Not strictly needed in this version
+// import kotlinx.coroutines.launch // Not strictly needed in this version
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.tooling.preview.Preview
-import com.halibiram.tomato.ui.theme.TomatoTheme
 
-/**
- * A composable that handles gestures for the player.
- * This typically wraps the player view and the controls overlay.
- *
- * @param onToggleControls Callback for single tap to toggle controls visibility.
- * @param onDoubleTapSeekForward Callback for double tap on the right side to seek forward.
- * @param onDoubleTapSeekBackward Callback for double tap on the left side to seek backward.
- * @param onHorizontalDrag Callback for horizontal drag to seek (optional, can be complex).
- * @param onVerticalDrag Callback for vertical drag to adjust volume/brightness (optional).
- */
+// private const val TAP_TIMEOUT_MS = 200L // Not used in this simplified version
+
 @Composable
 fun PlayerGestures(
     modifier: Modifier = Modifier,
     onToggleControls: () -> Unit,
-    onDoubleTapSeekForward: (() -> Unit)? = null,
-    onDoubleTapSeekBackward: (() -> Unit)? = null,
-    // Add more gesture callbacks as needed:
-    // onHorizontalDragStart: () -> Unit = {},
-    // onHorizontalDragEnd: () -> Unit = {},
-    // onHorizontalDragProgress: (Float) -> Unit = {}, // progress -1f to 1f
-    content: @Composable () -> Unit
+    onSeekForward: () -> Unit,
+    onSeekBackward: () -> Unit,
+    // Optional: Callbacks for visual feedback if desired
+    // onShowSeekForwardIndicator: () -> Unit,
+    // onShowSeekBackwardIndicator: () -> Unit,
+    content: @Composable BoxScope.() -> Unit // Allow content to be placed inside, like the PlayerView
 ) {
+    // val scope = rememberCoroutineScope() // Needed if launching coroutines for feedback
+    // var tapJob: Job? = null // Needed for more complex single/double tap distinction
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
+            .pointerInput(Unit) { // Key is Unit so this doesn't restart on recompositions from other changes
                 detectTapGestures(
                     onTap = {
+                        // Default detectTapGestures: If onDoubleTap is provided, onTap is only called
+                        // if it's determined that the tap is not part of a double-tap sequence.
+                        // So, this should work correctly for toggling controls on a clear single tap.
                         onToggleControls()
                     },
                     onDoubleTap = { offset ->
-                        // Determine if double tap is on left or right half of the screen
-                        val screenWidth = size.width
-                        if (offset.x > screenWidth / 2) {
-                            onDoubleTapSeekForward?.invoke()
+                        // tapJob?.cancel() // Not needed with standard detectTapGestures behavior for onDoubleTap
+                        if (size.width == 0) return@detectTapGestures // Avoid division by zero if size not ready
+                        if (offset.x > size.width / 2) {
+                            onSeekForward()
+                            // scope.launch { onShowSeekForwardIndicator() } // Optional feedback
                         } else {
-                            onDoubleTapSeekBackward?.invoke()
+                            onSeekBackward()
+                            // scope.launch { onShowSeekBackwardIndicator() } // Optional feedback
                         }
                     }
-                    // onLongPress = { /* Optional: Handle long press */ }
                 )
             }
-            // Add other gesture detectors like detectDragGestures for seek/volume/brightness
-            // .pointerInput(Unit) {
-            //     detectDragGestures(
-            //         onDragStart = { onHorizontalDragStart() },
-            //         onDragEnd = { onHorizontalDragEnd() },
-            //         onDrag = { change, dragAmount ->
-            //             change.consume()
-            //             // Calculate horizontal drag percentage for seeking
-            //             // Or vertical drag for volume/brightness
-            //         }
-            //     )
-            // }
     ) {
-        content()
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun PlayerGesturesPreview() {
-    TomatoTheme {
-        PlayerGestures(
-            onToggleControls = { /* Log tap */ },
-            onDoubleTapSeekForward = { /* Log double tap right */ },
-            onDoubleTapSeekBackward = { /* Log double tap left */ }
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                // This would be the player view and overlay content
-            }
-        }
+        content() // The content (e.g., PlayerView) will be overlaid with these gestures
     }
 }

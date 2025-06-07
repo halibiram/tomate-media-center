@@ -9,148 +9,173 @@ import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-// import com.halibiram.tomato.core.database.dao.DownloadDao // Assuming Hilt for DI here is tricky for Workers
-// import com.halibiram.tomato.core.database.entity.DownloadEntity
-// import dagger.assisted.Assisted // For Hilt assisted injection
-// import dagger.assisted.AssistedInject // For Hilt assisted injection
+import com.halibiram.tomato.core.player.R // Assuming common R file for drawables
+import com.halibiram.tomato.domain.model.DownloadStatus
+import com.halibiram.tomato.domain.repository.DownloadRepository
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.get
+import io.ktor.client.statement.contentLength
+import io.ktor.http.contentLength
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.core.isEmpty
+import io.ktor.utils.io.core.readBytes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.IOException
 import kotlin.random.Random
 
-// @HiltWorker // If using Hilt for worker injection
-class DownloadWorker /*@AssistedInject*/ constructor(
-    // @Assisted
-    private val appContext: Context,
-    // @Assisted
-    private val workerParams: WorkerParameters,
-    // private val downloadDao: DownloadDao // Injected via Hilt or passed if not using Hilt for Worker
+@HiltWorker
+class DownloadWorker @AssistedInject constructor(
+    @Assisted private val appContext: Context,
+    @Assisted private val workerParams: WorkerParameters,
+    private val downloadRepository: DownloadRepository, // Injected repository
+    private val httpClient: HttpClient // Injected HttpClient (ensure provided by DI)
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
-        const val KEY_MEDIA_ID = "mediaId"
+        const val KEY_DOWNLOAD_ID = "downloadId" // Use the unique Download ID
+        const val KEY_MEDIA_URL = "mediaUrl"
         const val KEY_MEDIA_TITLE = "mediaTitle"
-        const val KEY_DOWNLOAD_URL = "downloadUrl"
-        const val KEY_OUTPUT_FILE_NAME = "outputFileName" // e.g., "movie_123.mp4"
+        // Output file name can be derived from mediaId or title + extension
 
-        const val NOTIFICATION_CHANNEL_ID = "tomato_downloads_channel"
-        const val NOTIFICATION_CHANNEL_NAME = "Tomato Downloads"
-        const val PROGRESS_NOTIFICATION_ID_BASE = 1000 // Base for progress notifications
+        const val NOTIFICATION_CHANNEL_ID = "tomato_downloads_channel_worker" // Unique channel ID
+        const val NOTIFICATION_CHANNEL_NAME = "Tomato Downloads Worker"
+        const val PROGRESS_NOTIFICATION_ID_BASE = 2000 // Base for progress notifications
         const val KEY_PROGRESS = "progress"
+
+        private const val BUFFER_SIZE = 8 * 1024 // 8KB buffer
+        private const val UPDATE_THROTTLE_MS = 500L // Update progress every 500ms
     }
 
     override suspend fun doWork(): Result {
-        val mediaId = inputData.getString(KEY_MEDIA_ID) ?: return Result.failure()
+        val downloadId = inputData.getString(KEY_DOWNLOAD_ID) ?: return Result.failure(
+            workDataOf("error" to "Download ID missing")
+        )
+        val mediaUrl = inputData.getString(KEY_MEDIA_URL) ?: return Result.failure(
+            workDataOf("error" to "Media URL missing")
+        )
         val mediaTitle = inputData.getString(KEY_MEDIA_TITLE) ?: "Downloading..."
-        val downloadUrlString = inputData.getString(KEY_DOWNLOAD_URL) ?: return Result.failure()
-        val outputFileName = inputData.getString(KEY_OUTPUT_FILE_NAME) ?: "$mediaId.mp4"
+        // Example: derive output file name, ensure it's unique and valid
+        val outputFileName = "$downloadId.${mediaUrl.substringAfterLast('.', "mp4")}"
 
-        val notificationId = PROGRESS_NOTIFICATION_ID_BASE + Random.nextInt(10000) // Unique enough for concurrent downloads
+
+        val notificationId = PROGRESS_NOTIFICATION_ID_BASE + Random.nextInt(10000)
         createNotificationChannel()
 
-        // Initial status update (if using DAO directly, otherwise through a repository)
-        // downloadDao.updateDownloadStatus(mediaId, DownloadEntity.STATUS_DOWNLOADING)
+        // Update DB: Set status to DOWNLOADING
+        downloadRepository.updateDownloadStatus(downloadId, DownloadStatus.DOWNLOADING)
+        setForeground(createForegroundInfo(mediaTitle, 0, notificationId))
 
-        try {
-            val url = URL(downloadUrlString)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.connect()
+        return try {
+            downloadFile(downloadId, mediaUrl, outputFileName, mediaTitle, notificationId)
+            Result.success()
+        } catch (e: IOException) {
+            // Network or file I/O errors
+            downloadRepository.updateDownloadState(downloadId, 0, DownloadStatus.FAILED, 0L, null, null, null)
+            Result.failure(workDataOf("error" to ("IO Error: " + e.message)))
+        } catch (e: CancellationException) { // Specifically handle coroutine cancellation
+            downloadRepository.updateDownloadState(downloadId, getCurrentProgress(downloadId), DownloadStatus.PAUSED, null, null, null, null) // Or CANCELLED
+            Result.failure(workDataOf("error" to "Download cancelled by user"))
+        } catch (e: Exception) {
+            // Other errors
+            downloadRepository.updateDownloadState(downloadId, 0, DownloadStatus.FAILED, 0L, null, null, null)
+            Result.failure(workDataOf("error" to ("General Error: " + e.message)))
+        } finally {
+             NotificationManagerCompat.from(appContext).cancel(notificationId)
+        }
+    }
 
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                // downloadDao.updateDownloadStatus(mediaId, DownloadEntity.STATUS_FAILED, "Server error: ${connection.responseCode}")
-                return Result.failure(workDataOf("error" to "Server error: ${connection.responseCode}"))
-            }
+    private suspend fun getCurrentProgress(downloadId: String): Int {
+        return downloadRepository.getDownload(downloadId)?.progress ?: 0
+    }
 
-            val fileSize = connection.contentLengthLong
-            // downloadDao.updateDownloadSize(mediaId, fileSize)
 
-            val outputFile = File(appContext.getExternalFilesDir("downloads"), outputFileName)
-            // Ensure parent directory exists
-            outputFile.parentFile?.mkdirs()
+    private suspend fun downloadFile(
+        downloadId: String,
+        mediaUrl: String,
+        outputFileName: String,
+        mediaTitle: String,
+        notificationId: Int
+    ) = withContext(Dispatchers.IO) {
+        val outputFile = File(appContext.filesDir, "downloads/$outputFileName")
+        outputFile.parentFile?.mkdirs() // Ensure "downloads" directory exists
 
-            var inputStream: InputStream? = null
-            var outputStream: FileOutputStream? = null
-            var totalBytesDownloaded: Long = 0
+        val response = httpClient.get(mediaUrl)
+        val channel: ByteReadChannel = response.body()
+        val totalBytes = response.contentLength() ?: -1L // Total size from header
 
-            withContext(Dispatchers.IO) {
-                inputStream = connection.inputStream
-                outputStream = FileOutputStream(outputFile)
-                val buffer = ByteArray(4 * 1024) // 4KB buffer
-                var bytesRead: Int
+        downloadRepository.updateDownloadState(downloadId, 0, DownloadStatus.DOWNLOADING, 0L, totalBytes, null, null)
 
-                while (inputStream!!.read(buffer).also { bytesRead = it } != -1) {
-                    if (isStopped) { // Check if worker is cancelled
-                        // downloadDao.updateDownloadStatus(mediaId, DownloadEntity.STATUS_CANCELLED, "Download Cancelled by user")
-                        outputFile.delete() // Clean up partial file
-                        throw CancellationException("Download Cancelled by user")
+        var downloadedBytes = 0L
+        var lastUpdateTime = 0L
+
+        FileOutputStream(outputFile).use { outputStream ->
+            while (!channel.isClosedForRead) {
+                if (isStopped) { // Check for cancellation by WorkManager
+                    outputStream.close()
+                    outputFile.delete()
+                    throw CancellationException("Download stopped by WorkManager")
+                }
+
+                val packet = channel.readRemaining(BUFFER_SIZE.toLong())
+                while (!packet.isEmpty) {
+                    val bytes = packet.readBytes()
+                    outputStream.write(bytes)
+                    downloadedBytes += bytes.size
+
+                    val currentTime = System.currentTimeMillis()
+                    if (totalBytes > 0 && (currentTime - lastUpdateTime > UPDATE_THROTTLE_MS || downloadedBytes == totalBytes)) {
+                        val progress = ((downloadedBytes * 100) / totalBytes).toInt()
+                        setForeground(createForegroundInfo(mediaTitle, progress, notificationId))
+                        setProgress(workDataOf(KEY_PROGRESS to progress, "id" to downloadId))
+                        downloadRepository.updateDownloadState(downloadId, progress, DownloadStatus.DOWNLOADING, downloadedBytes, totalBytes, null, null)
+                        lastUpdateTime = currentTime
                     }
-
-                    outputStream!!.write(buffer, 0, bytesRead)
-                    totalBytesDownloaded += bytesRead
-                    val progress = ((totalBytesDownloaded * 100) / fileSize).toInt()
-
-                    // Update progress in DB
-                    // downloadDao.updateDownloadProgress(mediaId, progress, totalBytesDownloaded)
-
-                    // Update notification
-                    val foregroundInfo = createForegroundInfo(mediaTitle, progress, notificationId)
-                    setForeground(foregroundInfo)
-                    setProgress(workDataOf(KEY_PROGRESS to progress, "mediaId" to mediaId))
-
-                    delay(10) // Small delay to allow UI updates and prevent tight loop if download is too fast
                 }
             }
-            // downloadDao.updateDownloadStatus(mediaId, DownloadEntity.STATUS_COMPLETED)
-            showCompletionNotification(mediaTitle, notificationId + 10000) // Use a different ID for completion
-            return Result.success(workDataOf("output_path" to outputFile.absolutePath))
+        }
 
-        } catch (e: Exception) {
-            // downloadDao.updateDownloadStatus(mediaId, DownloadEntity.STATUS_FAILED, e.message)
-            return Result.failure(workDataOf("error" to e.message))
-        } finally {
-            withContext(Dispatchers.IO) {
-                inputStream?.close()
-                outputStream?.close()
-            }
-            // Remove progress notification if it wasn't replaced by completion/failure one
-            NotificationManagerCompat.from(appContext).cancel(notificationId)
+        if (downloadedBytes == totalBytes || totalBytes == -1L) { // Consider totalBytes == -1L as success if stream ends
+            downloadRepository.updateDownloadState(downloadId, 100, DownloadStatus.COMPLETED, downloadedBytes, totalBytes, outputFile.absolutePath, System.currentTimeMillis())
+            showFinalNotification(mediaTitle, "Download complete.", notificationId + 1) // Use different ID for completion
+        } else {
+            // This case might occur if stream ends prematurely and downloadedBytes != totalBytes
+            throw IOException("Download incomplete: $downloadedBytes / $totalBytes bytes downloaded.")
         }
     }
 
     private fun createForegroundInfo(title: String, progress: Int, notificationId: Int): ForegroundInfo {
-        val intent = appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
-        // val pendingIntent = PendingIntent.getActivity(appContext, 0, intent, PendingIntent.FLAG_IMMUTABLE) // Add appropriate PendingIntent
-
         val notification = NotificationCompat.Builder(appContext, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(title)
-            .setContentText("Downloading: $progress%")
-            .setSmallIcon(android.R.drawable.stat_sys_download) // Replace with your app's icon
+            .setContentText(if (progress < 100) "Downloading: $progress%" else "Download complete")
+            .setSmallIcon(R.drawable.ic_stat_player_notification) // Use existing placeholder
             .setOngoing(true)
-            .setProgress(100, progress, false)
-            // .setContentIntent(pendingIntent) // To open app on click
+            .setOnlyAlertOnce(true) // Don't repeatedly alert for progress updates
+            .setProgress(100, progress, progress == -1) // Indeterminate if progress is -1
             .build()
         return ForegroundInfo(notificationId, notification)
     }
-     private fun showCompletionNotification(title: String, notificationId: Int) {
-        if (ActivityCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            // Cannot post notification
-            return
+
+    private fun showFinalNotification(title: String, message: String, notificationId: Int) {
+        if (ActivityCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return // Cannot post notification if permission not granted on Android 13+
         }
-        val notification = NotificationCompat.Builder(appContext, NOTIFICATION_CHANNEL_ID)
+         val notification = NotificationCompat.Builder(appContext, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(title)
-            .setContentText("Download complete.")
-            .setSmallIcon(android.R.drawable.stat_sys_download_done) // Replace with your app's icon
-            .setAutoCancel(true)
-            // .setContentIntent(pendingIntent) // To open app or downloaded file list
+            .setContentText(message)
+            .setSmallIcon(R.drawable.ic_stat_player_notification)
+            .setAutoCancel(true) // Dismiss on click
             .build()
         NotificationManagerCompat.from(appContext).notify(notificationId, notification)
     }
@@ -161,16 +186,12 @@ class DownloadWorker /*@AssistedInject*/ constructor(
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
                 NOTIFICATION_CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW // Use LOW to avoid sound for progress
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Notifications for ongoing and completed downloads"
+                description = "Notifications for ongoing and completed downloads via Worker."
             }
-            val notificationManager: NotificationManager =
-                appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+            val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
         }
     }
-
-    // CancellationException to be thrown when the work is stopped.
-    class CancellationException(message: String) : Exception(message)
 }

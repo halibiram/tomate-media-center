@@ -2,6 +2,10 @@ package com.halibiram.tomato.feature.settings.presentation.component
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -10,99 +14,122 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.halibiram.tomato.ui.theme.TomatoTheme
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.ToggleOn
-
-enum class SettingControlType {
-    NONE, // For clickable items that navigate or open dialogs
-    SWITCH,
-    DROPDOWN, // Placeholder, would need more complex implementation
-    TEXT_VALUE // To display a current value
-}
 
 @Composable
 fun SettingItem(
     modifier: Modifier = Modifier,
-    icon: ImageVector?,
+    icon: ImageVector? = null,
     title: String,
-    subtitle: String? = null,
-    controlType: SettingControlType = SettingControlType.NONE,
-    isChecked: Boolean = false, // For SWITCH type
-    currentValue: String? = null, // For TEXT_VALUE or to supplement DROPDOWN
+    summary: String? = null,
     onClick: (() -> Unit)? = null,
-    onCheckedChange: ((Boolean) -> Unit)? = null // For SWITCH type
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
+    val itemModifier = if (onClick != null && trailingContent == null) {
+        modifier.clickable(onClick = onClick) // Make whole row clickable if no specific trailing interactive content
+    } else {
+        modifier
+    }
+
     Row(
-        modifier = modifier
+        modifier = itemModifier
             .fillMaxWidth()
-            .then(if (onClick != null && controlType != SettingControlType.SWITCH) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp), // Increased vertical padding
         verticalAlignment = Alignment.CenterVertically
     ) {
         icon?.let {
             Icon(
                 imageVector = it,
-                contentDescription = null, // Decorative
-                modifier = Modifier.size(24.dp),
+                contentDescription = null, // Decorative if title is present
+                modifier = Modifier.padding(end = 16.dp).size(24.dp), // Consistent size
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.width(16.dp))
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(text = title, style = MaterialTheme.typography.titleMedium)
-            subtitle?.let {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(text = it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            summary?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
         }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        when (controlType) {
-            SettingControlType.SWITCH -> {
-                onCheckedChange?.let {
-                    Switch(
-                        checked = isChecked,
-                        onCheckedChange = it
-                    )
-                }
+        // If trailingContent is provided, it takes precedence over the default chevron for onClick.
+        if (trailingContent != null) {
+            Spacer(modifier = Modifier.width(16.dp)) // Space before trailing content
+            Box(contentAlignment = Alignment.CenterEnd) { // Align trailing content to the end
+                trailingContent()
             }
-            SettingControlType.TEXT_VALUE -> {
-                currentValue?.let {
-                    Text(text = it, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-            SettingControlType.NONE -> {
-                // If onClick is defined, show a chevron or similar indicator for navigation items
-                if (onClick != null) {
-                    Icon(
-                        Icons.Default.ChevronRight,
-                        contentDescription = "Navigate",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            SettingControlType.DROPDOWN -> { // Simplified display for dropdown
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    currentValue?.let {
-                        Text(text = it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 4.dp))
-                    }
-                     if (onClick != null) { // Assume onClick opens the dropdown
-                        Icon(
-                            Icons.Default.ChevronRight, // Or a dropdown arrow icon
-                            contentDescription = "Open selection",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+        } else if (onClick != null) { // Show chevron only if onClick is present and no custom trailing content
+            Spacer(modifier = Modifier.width(16.dp))
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = "Navigate or select", // More descriptive
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
-    Divider(modifier = Modifier.padding(start = if (icon != null) 56.dp else 16.dp))
+    // Consider adding a Divider here or outside this composable for lists
+    // Divider(modifier = Modifier.padding(start = if (icon != null) 56.dp else 16.dp))
 }
+
+@Composable
+fun SwitchSettingItem(
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    title: String,
+    summary: String?,
+    checked: Boolean,
+    onCheckedChanged: (Boolean) -> Unit
+) {
+    SettingItem(
+        modifier = modifier,
+        icon = icon,
+        title = title,
+        summary = summary,
+        // Make the row itself clickable to toggle the switch for better UX
+        // This is not standard Material behavior but often requested.
+        // If only switch should be clickable, set onClick = null here.
+        // For now, let's make the whole row toggle the switch.
+        onClick = { onCheckedChanged(!checked) },
+        trailingContent = {
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChanged
+            )
+        }
+    )
+}
+
+// Example for a DialogSettingItem structure (dialog itself not implemented here)
+@Composable
+fun DialogSettingItem(
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    title: String,
+    currentValue: String?, // Display the current selected value
+    onClick: () -> Unit // This onClick will trigger the dialog
+) {
+    SettingItem(
+        modifier = modifier,
+        icon = icon,
+        title = title,
+        summary = currentValue ?: "Not set", // Show current value as summary
+        onClick = onClick, // Chevron will be shown by default if no trailingContent
+        // If you want to show current value also at trailing end:
+        // trailingContent = {
+        //     Row(verticalAlignment = Alignment.CenterVertically) {
+        //         currentValue?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+        //         Spacer(Modifier.width(8.dp))
+        //         Icon(Icons.Filled.ChevronRight, contentDescription = "Select", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        //     }
+        // }
+    )
+}
+
+
+// --- Previews ---
 
 @Preview(showBackground = true)
 @Composable
@@ -111,7 +138,7 @@ fun SettingItemPreview_Clickable() {
         SettingItem(
             icon = Icons.Default.Palette,
             title = "Appearance",
-            subtitle = "Change theme and display options",
+            summary = "Change theme and display options",
             onClick = {}
         )
     }
@@ -119,56 +146,39 @@ fun SettingItemPreview_Clickable() {
 
 @Preview(showBackground = true)
 @Composable
-fun SettingItemPreview_Switch() {
+fun SwitchSettingItemPreview() {
+    varisChecked by remember { mutableStateOf(true) }
     TomatoTheme {
-        SettingItem(
+        SwitchSettingItem(
             icon = Icons.Default.Notifications,
             title = "Enable Notifications",
-            subtitle = "Receive updates and alerts",
-            controlType = SettingControlType.SWITCH,
-            isChecked = true,
-            onCheckedChange = {}
+            summary = "Receive updates and alerts",
+            checked = isChecked,
+            onCheckedChanged = { isChecked = it }
         )
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun SettingItemPreview_TextValue() {
+fun DialogSettingItemPreview() {
     TomatoTheme {
-        SettingItem(
-            icon = Icons.Default.ToggleOn, // Example icon
-            title = "Current Plan",
-            controlType = SettingControlType.TEXT_VALUE,
-            currentValue = "Premium"
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun SettingItemPreview_DropdownPlaceholder() {
-    TomatoTheme {
-        SettingItem(
+        DialogSettingItem(
             icon = Icons.Default.Palette,
-            title = "Theme",
-            subtitle = "Select app theme",
-            controlType = SettingControlType.DROPDOWN,
-            currentValue = "System Default",
-            onClick = {} // To simulate opening a dropdown
+            title = "Theme Color",
+            currentValue = "Blueberry",
+            onClick = { /* Show dialog */ }
         )
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun SettingItemPreview_NoIcon() {
+fun SettingItemPreview_NoIcon_NoSummary_NoTrailing() {
     TomatoTheme {
         SettingItem(
-            icon = null,
-            title = "About",
-            subtitle = "Version and legal information",
-            onClick = {}
+            title = "Advanced Settings",
+            onClick = {} // Just a clickable item
         )
     }
 }

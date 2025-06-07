@@ -55,4 +55,12 @@ object PlayerModule {
     ): PlayerManager {
         return PlayerManager(tomatoExoPlayer, mediaSourceFactory)
     }
+
+    @Provides
+    @Singleton
+    fun provideCastManager(@ApplicationContext context: Context): com.halibiram.tomato.core.player.cast.CastManager {
+        // CastManager is already annotated with @Singleton and @Inject for its context.
+        // Hilt can provide it directly. Explicitly providing it here is also fine.
+        return com.halibiram.tomato.core.player.cast.CastManager(context)
+    }
 }
