@@ -1,14 +1,9 @@
 package com.halibiram.tomato.core.database.dao
 
-import androidx.room.Dao
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
+import androidx.room.*
 import com.halibiram.tomato.core.database.entity.DownloadEntity
 import kotlinx.coroutines.flow.Flow
 
-// DownloadDao
 @Dao
 interface DownloadDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -17,12 +12,15 @@ interface DownloadDao {
     @Update
     suspend fun updateDownload(download: DownloadEntity)
 
-    @Query("SELECT * FROM downloads WHERE mediaId = :mediaId")
-    fun getDownloadById(mediaId: String): Flow<DownloadEntity?>
-
-    @Query("SELECT * FROM downloads ORDER BY title")
+    @Query("SELECT * FROM downloads ORDER BY createdAt DESC")
     fun getAllDownloads(): Flow<List<DownloadEntity>>
 
-    @Query("DELETE FROM downloads WHERE mediaId = :mediaId")
-    suspend fun deleteDownload(mediaId: String)
+    @Query("SELECT * FROM downloads WHERE id = :downloadId")
+    fun getDownloadById(downloadId: String): Flow<DownloadEntity?>
+
+    @Query("DELETE FROM downloads WHERE id = :downloadId")
+    suspend fun deleteDownload(downloadId: String)
+
+    @Query("SELECT * FROM downloads WHERE downloadStatus = :status")
+    fun getDownloadsByStatus(status: String): Flow<List<DownloadEntity>>
 }

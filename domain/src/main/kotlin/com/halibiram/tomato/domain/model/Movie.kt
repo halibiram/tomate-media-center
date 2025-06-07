@@ -1,14 +1,13 @@
 package com.halibiram.tomato.domain.model
 
+// Domain model for Movie
 data class Movie(
     val id: String,
     val title: String,
+    val overview: String?,
     val posterPath: String?,
     val backdropPath: String?,
-    val releaseDate: String?, // Or a Date/LocalDate type
-    val overview: String?,
+    val releaseDate: String?,
     val voteAverage: Double?,
-    val adult: Boolean?,
-    val genreIds: List<Int>?
-    // Add other relevant domain model fields
+    val genres: List<String> = emptyList()
 )

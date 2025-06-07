@@ -3,14 +3,16 @@ package com.halibiram.tomato.core.database.entity
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-// DownloadEntity
 @Entity(tableName = "downloads")
 data class DownloadEntity(
-    @PrimaryKey val mediaId: String, // Could be movie or episode ID
+    @PrimaryKey val id: String, // Could be movieId or episodeId
+    val mediaType: String, // "movie" or "episode"
     val title: String,
-    val downloadUrl: String,
-    val filePath: String?,
-    val status: Int, // e.g., PENDING, DOWNLOADING, COMPLETED, FAILED
-    val progress: Int,
-    val mediaType: String // "movie" or "episode"
+    val posterPath: String?,
+    val downloadPath: String,
+    val downloadStatus: String, // e.g., "PENDING", "DOWNLOADING", "COMPLETED", "FAILED"
+    val progress: Int = 0, // 0-100
+    val fileSize: Long = 0L,
+    val downloadedBytes: Long = 0L,
+    val createdAt: Long = System.currentTimeMillis()
 )
