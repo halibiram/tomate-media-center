@@ -1,98 +1,199 @@
 package com.halibiram.tomato.feature.home.presentation
 
-// import androidx.arch.core.executor.testing.InstantTaskExecutorRule // For LiveData if used by ViewModel
-// import com.halibiram.tomato.util.MainCoroutineRule // Custom rule for testing coroutines
-// import com.halibiram.tomato.domain.usecase.movie.GetMoviesUseCase // Example use case
-// import com.halibiram.tomato.domain.usecase.series.GetSeriesUseCase // Example use case
+import com.halibiram.tomato.core.common.result.Result
+import com.halibiram.tomato.core.common.result.TomatoException
+import com.halibiram.tomato.domain.model.Movie
+import com.halibiram.tomato.domain.usecase.movie.GetMoviesUseCase
+import com.halibiram.tomato.domain.usecase.movie.MovieListType
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.runTest // More modern way for coroutine testing
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Rule
-import org.junit.Test
-// import org.mockito.Mock
-// import org.mockito.MockitoAnnotations
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.*
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 
-@OptIn(ExperimentalCoroutinesApi::class)
+
+// MainCoroutineExtension for JUnit 5
+@ExperimentalCoroutinesApi
+class MainCoroutineExtension(
+    val testDispatcher: TestDispatcher = StandardTestDispatcher() // Use StandardTestDispatcher for more control
+) : org.junit.jupiter.api.extension.BeforeEachCallback, org.junit.jupiter.api.extension.AfterEachCallback {
+    override fun beforeEach(context: org.junit.jupiter.api.extension.ExtensionContext?) {
+        Dispatchers.setMain(testDispatcher)
+    }
+    override fun afterEach(context: org.junit.jupiter.api.extension.ExtensionContext?) {
+        Dispatchers.resetMain()
+    }
+}
+
+@ExperimentalCoroutinesApi
+@ExtendWith(MainCoroutineExtension::class) // Apply the extension for JUnit 5
 class HomeViewModelTest {
 
-    // @get:Rule
-    // val instantExecutorRule = InstantTaskExecutorRule()
-
-    // @get:Rule
-    // val mainCoroutineRule = MainCoroutineRule() // Your custom coroutine rule
-
-    // @Mock
-    // private lateinit var mockGetMoviesUseCase: GetMoviesUseCase
-    // @Mock
-    // private lateinit var mockGetSeriesUseCase: GetSeriesUseCase
-    // @Mock
-    // private lateinit var mockGetTrendingUseCase: GetTrendingUseCase // Assuming one exists
-
+    private lateinit var getMoviesUseCase: GetMoviesUseCase
     private lateinit var viewModel: HomeViewModel
+    private lateinit var testDispatcher: TestDispatcher
 
-    @Before
+    @BeforeEach
     fun setUp() {
-        // MockitoAnnotations.openMocks(this)
-        // viewModel = HomeViewModel(mockGetMoviesUseCase, mockGetSeriesUseCase, mockGetTrendingUseCase)
-
-        // For placeholder, instantiate directly if no complex dependencies in constructor
-        // The HomeViewModel provided earlier has no constructor args, so this is fine for now.
-        viewModel = HomeViewModel()
+        testDispatcher = StandardTestDispatcher() // Get dispatcher from rule for advancing time
+        Dispatchers.setMain(testDispatcher) // Set main dispatcher for tests
+        getMoviesUseCase = mockk()
+        viewModel = HomeViewModel(getMoviesUseCase)
     }
 
-    @Test
-    fun `initial state is loading`() = runTest {
-        // Given the ViewModel is just initialized
+    @AfterEach
+    fun tearDown() {
+        Dispatchers.resetMain() // Reset main dispatcher after tests
+    }
 
-        // When
+    private fun sampleMovie(id: String, title: String) = Movie(id, title, "Desc", "url", "date", emptyList(), 0.0)
+
+    @Test
+    fun `initial UI state is correct`() {
         val initialState = viewModel.uiState.value
-
-        // Then
-        assertTrue("Initial state should be loading", initialState.isLoading)
+        assertTrue(initialState.isLoadingPopular) // Init calls fetchPopularMovies which sets loading
+        assertTrue(initialState.isLoadingTrending) // Init calls fetchTrendingMovies
+        assertEquals(emptyList<Movie>(), initialState.popularMovies)
+        assertEquals(emptyList<Movie>(), initialState.trendingMovies)
+        assertNull(initialState.errorPopular)
+        assertNull(initialState.errorTrending)
     }
 
     @Test
-    fun `loadHomeScreenData updates state with fetched data (simulated)`() = runTest {
-        // Given
-        // For this test, HomeViewModel's loadHomeScreenData has simulated data.
-        // In a real test with mocked use cases:
-        // val movies = listOf(Movie("1", "Movie 1", ...))
-        // `when`(mockGetMoviesUseCase.invoke(1)).thenReturn(flowOf(movies))
-        // `when`(mockGetSeriesUseCase.invoke(1)).thenReturn(flowOf(emptyList()))
-        // `when`(mockGetTrendingUseCase.invoke()).thenReturn(flowOf(emptyList()))
+    fun `fetchPopularMovies updates state on Loading`() = runTest(testDispatcher.scheduler) {
+        coEvery { getMoviesUseCase(type = MovieListType.POPULAR, page = 1) } returns flowOf(Result.Loading())
 
-        // When
-        // ViewModel's init calls loadHomeScreenData, or call it explicitly if needed.
-        // We might need to wait for the simulated delay in loadHomeScreenData if not using TestDispatcher.
-        // However, runTest should handle delays in launch blocks appropriately for simple cases.
+        viewModel.fetchPopularMovies()
+        advanceUntilIdle() // Ensure coroutines launched by fetchPopularMovies complete
 
-        // To ensure `loadHomeScreenData` in `init` completes or to test re-load:
-        viewModel.loadHomeScreenData()
-
-        // Advance time if MainCoroutineRule uses TestDispatcher and there are delays
-        // mainCoroutineRule.dispatcher.scheduler.advanceUntilIdle() // Example if using TestCoroutineDispatcher
-
-        val finalState = viewModel.uiState.value
-
-        // Then
-        assertFalse("Should not be loading after data fetch", finalState.isLoading)
-        assertFalse("Featured items should not be empty after simulated fetch", finalState.featuredItems.isEmpty())
-        assertFalse("Trending items should not be empty after simulated fetch", finalState.trendingItems.isEmpty())
-        assertFalse("Categories should not be empty after simulated fetch", finalState.categories.isEmpty())
-        assertEquals(null, finalState.error) // No error in successful simulation
+        val uiState = viewModel.uiState.value
+        assertTrue(uiState.isLoadingPopular)
+        assertNull(uiState.errorPopular)
     }
 
     @Test
-    fun `onFeaturedItemClick placeholder test`() {
-        // This test would typically verify navigation or an event being sent.
-        // For now, it's a placeholder.
-        viewModel.onFeaturedItemClick("id123")
-        // Assert something if there was a side effect to observe, e.g., a navigation event.
-        assertEquals(true, true) // Placeholder assertion
+    fun `fetchPopularMovies updates state on Success`() = runTest(testDispatcher.scheduler) {
+        val movies = listOf(sampleMovie("1", "Popular Movie 1"))
+        coEvery { getMoviesUseCase(type = MovieListType.POPULAR, page = 1) } returns flowOf(Result.Success(movies))
+
+        viewModel.fetchPopularMovies()
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        assertFalse(uiState.isLoadingPopular)
+        assertEquals(movies, uiState.popularMovies)
+        assertNull(uiState.errorPopular)
     }
 
-    // Add more tests for other actions, error states, etc.
+    @Test
+    fun `fetchPopularMovies updates state on Error`() = runTest(testDispatcher.scheduler) {
+        val exception = TomatoException("Network Error Popular")
+        coEvery { getMoviesUseCase(type = MovieListType.POPULAR, page = 1) } returns flowOf(Result.Error(exception))
+
+        viewModel.fetchPopularMovies()
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        assertFalse(uiState.isLoadingPopular)
+        assertEquals(exception.message, uiState.errorPopular)
+        assertTrue(uiState.popularMovies.isEmpty())
+    }
+
+    @Test
+    fun `fetchTrendingMovies updates state on Loading`() = runTest(testDispatcher.scheduler) {
+        coEvery { getMoviesUseCase(type = MovieListType.TRENDING, timeWindow = "day") } returns flowOf(Result.Loading())
+
+        viewModel.fetchTrendingMovies()
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        assertTrue(uiState.isLoadingTrending)
+        assertNull(uiState.errorTrending)
+    }
+
+    @Test
+    fun `fetchTrendingMovies updates state on Success`() = runTest(testDispatcher.scheduler) {
+        val movies = listOf(sampleMovie("2", "Trending Movie 1"))
+        coEvery { getMoviesUseCase(type = MovieListType.TRENDING, timeWindow = "day") } returns flowOf(Result.Success(movies))
+
+        viewModel.fetchTrendingMovies()
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        assertFalse(uiState.isLoadingTrending)
+        assertEquals(movies, uiState.trendingMovies)
+        assertNull(uiState.errorTrending)
+    }
+
+    @Test
+    fun `fetchTrendingMovies updates state on Error`() = runTest(testDispatcher.scheduler) {
+        val exception = TomatoException("Network Error Trending")
+        coEvery { getMoviesUseCase(type = MovieListType.TRENDING, timeWindow = "day") } returns flowOf(Result.Error(exception))
+
+        viewModel.fetchTrendingMovies()
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        assertFalse(uiState.isLoadingTrending)
+        assertEquals(exception.message, uiState.errorTrending)
+        assertTrue(uiState.trendingMovies.isEmpty())
+    }
+
+    @Test
+    fun `fetchMoviesForCategory updates state successfully`() = runTest(testDispatcher.scheduler) {
+        val categoryId = "action"
+        val categoryDisplayName = "Action"
+        val movies = listOf(sampleMovie("3", "Action Movie"))
+        coEvery { getMoviesUseCase(type = MovieListType.BY_CATEGORY, categoryId = categoryId) } returns flowOf(Result.Success(movies))
+
+        viewModel.fetchMoviesForCategory(categoryId, categoryDisplayName)
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        assertFalse(uiState.isLoadingCategory) // Assuming general category loading flag
+        assertEquals(movies, uiState.categoryMovies[categoryDisplayName])
+        assertNull(uiState.errorCategory)
+    }
+
+    @Test
+    fun `retrySection calls correct fetch method for POPULAR`() = runTest(testDispatcher.scheduler) {
+        coEvery { getMoviesUseCase(type = MovieListType.POPULAR, page = 1) } returns flowOf(Result.Success(emptyList()))
+
+        viewModel.onRetrySection(MovieListType.POPULAR)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { getMoviesUseCase(type = MovieListType.POPULAR, page = 1) }
+    }
+
+    @Test
+    fun `retrySection calls correct fetch method for TRENDING`() = runTest(testDispatcher.scheduler) {
+        coEvery { getMoviesUseCase(type = MovieListType.TRENDING, timeWindow = "day") } returns flowOf(Result.Success(emptyList()))
+
+        viewModel.onRetrySection(MovieListType.TRENDING)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { getMoviesUseCase(type = MovieListType.TRENDING, timeWindow = "day") }
+    }
+
+    @Test
+    fun `retrySection calls correct fetch method for BY_CATEGORY`() = runTest(testDispatcher.scheduler) {
+        val categoryId = "cat1"
+        val categoryName = "Category1"
+        coEvery { getMoviesUseCase(type = MovieListType.BY_CATEGORY, categoryId = categoryId) } returns flowOf(Result.Success(emptyList()))
+
+        viewModel.onRetrySection(MovieListType.BY_CATEGORY, categoryId, categoryName)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { getMoviesUseCase(type = MovieListType.BY_CATEGORY, categoryId = categoryId) }
+    }
 }

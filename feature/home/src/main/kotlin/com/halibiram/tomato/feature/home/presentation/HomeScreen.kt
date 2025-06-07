@@ -1,108 +1,143 @@
 package com.halibiram.tomato.feature.home.presentation
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.halibiram.tomato.domain.usecase.movie.MovieListType
 import com.halibiram.tomato.feature.home.presentation.component.CategorySection
-import com.halibiram.tomato.feature.home.presentation.component.FeaturedSection
+import com.halibiram.tomato.feature.home.presentation.component.FeaturedSection // Assuming this is for "Popular"
+// import com.halibiram.tomato.feature.home.presentation.component.TrendingSection // Already imported by FeaturedSection, actually different.
 import com.halibiram.tomato.feature.home.presentation.component.TrendingSection
-import com.halibiram.tomato.ui.components.TomatoTopBar
+import com.halibiram.tomato.ui.components.TomatoTopBar // Assuming this is your custom top bar
 import com.halibiram.tomato.ui.theme.TomatoTheme
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    // viewModel: HomeViewModel = hiltViewModel(), // Example with Hilt
-    viewModel: HomeViewModel, // Pass ViewModel directly for preview or non-Hilt setup
-    onNavigateToDetails: (mediaId: String, mediaType: String) -> Unit,
-    onNavigateToCategoryList: (categoryId: String) -> Unit
+    viewModel: HomeViewModel = hiltViewModel(),
+    onNavigateToDetails: (movieId: String) -> Unit,
+    onNavigateToCategoryList: (categoryId: String, categoryName: String) -> Unit
+    // Add other navigation callbacks if needed, e.g., for "View More" on trending
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TomatoTopBar(title = "Tomato Home")
+            TomatoTopBar(
+                title = "Tomato Home", // Or some dynamic title
+                // scrollBehavior = scrollBehavior // If your TomatoTopBar supports it
+            )
         }
-    ) { paddingValues ->
-        if (uiState.isLoading) {
-            Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
+    ) { innerPadding ->
+        // Overall loading state for the whole screen, if all initial calls are critical
+        if (uiState.isLoadingPopular && uiState.isLoadingTrending && uiState.popularMovies.isEmpty() && uiState.trendingMovies.isEmpty()) {
+             Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
                 CircularProgressIndicator()
             }
-        } else if (uiState.error != null) {
-            Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "Error: ${uiState.error}")
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = { viewModel.onRetry() }) {
-                        Text("Retry")
-                    }
-                }
+        } else if (uiState.screenError != null) { // A general screen error
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Error: ${uiState.screenError}",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                // Add a general retry button if applicable for screenError
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    top = paddingValues.calculateTopPadding() + 16.dp, // Add space below TopBar
-                    bottom = paddingValues.calculateBottomPadding() + 16.dp,
-                    start = 16.dp,
-                    end = 16.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding) // Apply padding from scaffold
+                    .verticalScroll(rememberScrollState()) // Make the whole screen scrollable
             ) {
-                if (uiState.featuredItems.isNotEmpty()) {
-                    item {
-                        FeaturedSection(
-                            items = uiState.featuredItems,
-                            onItemClick = { itemId ->
-                                viewModel.onFeaturedItemClick(itemId)
-                                onNavigateToDetails(itemId, "featured") // Example mediaType
-                            }
-                        )
-                    }
+                // Popular Movies Section (using FeaturedSection composable)
+                FeaturedSection(
+                    title = "Popular Movies",
+                    movies = uiState.popularMovies,
+                    isLoading = uiState.isLoadingPopular,
+                    error = uiState.errorPopular,
+                    onMovieClick = onNavigateToDetails,
+                    onRetry = { viewModel.onRetrySection(MovieListType.POPULAR) },
+                    modifier = Modifier.padding(top = 16.dp) // Add padding between sections
+                )
+
+                Spacer(modifier = Modifier.height(24.dp)) // Space between sections
+
+                // Trending Movies Section
+                TrendingSection(
+                    title = "Trending Today", // Or pass timeWindow for dynamic title
+                    movies = uiState.trendingMovies,
+                    isLoading = uiState.isLoadingTrending,
+                    error = uiState.errorTrending,
+                    onMovieClick = onNavigateToDetails,
+                    onRetry = { viewModel.onRetrySection(MovieListType.TRENDING) }
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Dynamic Category Sections
+                // Example: Iterate over a predefined list of categories or fetched categories
+                // For this placeholder, using the example category from HomeViewModel
+                if (uiState.categoryMovies.containsKey("Action")) { // Assuming "Action" is a key used in VM
+                     CategorySection(
+                        categoryTitle = "Action Packed",
+                        movies = uiState.categoryMovies["Action"] ?: emptyList(),
+                        isLoading = uiState.isLoadingCategory, // This is a general flag, might need per-category flags
+                        error = uiState.errorCategory, // General category error
+                        onMovieClick = onNavigateToDetails,
+                        onViewMoreClick = { onNavigateToCategoryList("action_movies_placeholder_id", "Action Packed") },
+                        onRetry = { viewModel.onRetrySection(MovieListType.BY_CATEGORY, "action_movies_placeholder_id", "Action Packed") }
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
 
-                if (uiState.trendingItems.isNotEmpty()) {
-                    item {
-                        TrendingSection(
-                            items = uiState.trendingItems,
-                            onItemClick = { itemId ->
-                                viewModel.onTrendingItemClick(itemId)
-                                onNavigateToDetails(itemId, "trending") // Example mediaType
-                            }
-                        )
-                    }
+                // Add more sections as needed (e.g., different categories, genres, etc.)
+
+                // Example for another category if your ViewModel loads multiple
+                 if (uiState.categoryMovies.containsKey("Comedy")) {
+                     CategorySection(
+                        categoryTitle = "Comedy Greats",
+                        movies = uiState.categoryMovies["Comedy"] ?: emptyList(),
+                        isLoading = uiState.isLoadingCategory,
+                        error = uiState.errorCategory,
+                        onMovieClick = onNavigateToDetails,
+                        onViewMoreClick = { onNavigateToCategoryList("comedy_movies_placeholder_id", "Comedy Greats") },
+                        onRetry = { viewModel.onRetrySection(MovieListType.BY_CATEGORY, "comedy_movies_placeholder_id", "Comedy Greats") }
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
 
-                uiState.categories.forEach { (categoryName, items) ->
-                    item {
-                        CategorySection(
-                            categoryName = categoryName,
-                            items = items,
-                            onItemClick = { itemId ->
-                                viewModel.onCategoryItemClick(categoryName, itemId)
-                                onNavigateToDetails(itemId, categoryName) // Example mediaType
-                            },
-                            onViewMoreClick = {
-                                onNavigateToCategoryList(categoryName)
-                            }
-                        )
-                    }
-                }
+
+                Spacer(modifier = Modifier.height(16.dp)) // Padding at the bottom of the scrollable content
             }
         }
     }
@@ -111,65 +146,47 @@ fun HomeScreen(
 @Preview(showBackground = true)
 @Composable
 fun HomeScreenPreview_Loading() {
-    val loadingViewModel = HomeViewModel().apply {
-        // Manually set state for preview if ViewModel has complex dependencies
-        // This is a simplified way. For complex ViewModels, use a fake/mock.
-    }
+    val mockViewModel = HomeViewModel(GetMoviesUseCase(FakeMovieRepository())) // Needs a fake repo for preview
+    // Simulate loading state in mockViewModel if possible, or rely on its initial state
+    // For a simple preview, we can't easily control the internal state of a Hilt VM.
+    // It's better to pass a VM instance in previews that is pre-configured.
+    // This preview will show the initial state of HomeViewModel.
     TomatoTheme {
         HomeScreen(
-            viewModel = loadingViewModel,
-            onNavigateToDetails = { _, _ -> },
-            onNavigateToCategoryList = {}
+            viewModel = mockViewModel, // Provide a controlled or fake ViewModel for previews
+            onNavigateToDetails = {},
+            onNavigateToCategoryList = { _, _ -> }
         )
     }
 }
 
-@Preview(showBackground = true)
-@Composable
-fun HomeScreenPreview_Error() {
-    val errorViewModel = HomeViewModel().apply {
-        // Simulate error state
-        // This direct state manipulation is for preview convenience.
-        // In a real app, this would be managed by the ViewModel's logic.
-        // _uiState.value = HomeUiState(isLoading = false, error = "Network request failed")
-    }
-    // For preview, we'd need to find a way to set the state of the preview HomeViewModel
-    // to show error. This is tricky without Hilt/DI in previews for complex ViewModels.
-    // A simpler ViewModel or a fake implementation is better for previews.
-    // Let's assume the default state of the preview HomeViewModel shows loading,
-    // or we can modify the ViewModel to take initial state for previews.
-
-    // For this placeholder, we'll just show the screen with a generic HomeViewModel.
-    // To actually see the error state, you'd run the app or have a more sophisticated preview setup.
-    TomatoTheme {
-        // This preview will likely show the loading state or initial empty state
-        // unless HomeViewModel is modified to accept initial state for previews.
-        HomeScreen(
-            viewModel = HomeViewModel(), // A new instance for preview
-            onNavigateToDetails = { _, _ -> },
-            onNavigateToCategoryList = {}
-        )
-    }
+// A simple FakeRepository for previewing HomeScreen
+class FakeMovieRepository : com.halibiram.tomato.domain.repository.MovieRepository {
+    override fun getPopularMovies(page: Int) = kotlinx.coroutines.flow.flowOf(com.halibiram.tomato.core.common.result.Result.Success(emptyList<com.halibiram.tomato.domain.model.Movie>()))
+    override fun getTrendingMovies(timeWindow: String) = kotlinx.coroutines.flow.flowOf(com.halibiram.tomato.core.common.result.Result.Success(emptyList<com.halibiram.tomato.domain.model.Movie>()))
+    override fun getMoviesByCategory(categoryId: String) = kotlinx.coroutines.flow.flowOf(com.halibiram.tomato.core.common.result.Result.Success(emptyList<com.halibiram.tomato.domain.model.Movie>()))
+    override fun getMovieDetails(movieId: String) = kotlinx.coroutines.flow.flowOf(com.halibiram.tomato.core.common.result.Result.Success(null))
 }
 
+
 @Preview(showBackground = true)
 @Composable
-fun HomeScreenPreview_Data() {
-    val dataViewModel = HomeViewModel().apply {
-        // Simulate loaded data state for preview
-        // Similar to error state, this is for preview convenience.
-        // _uiState.value = HomeUiState(
-        // isLoading = false,
-        // featuredItems = listOf("Preview Featured 1", "Preview Featured 2"),
-        //     trendingItems = listOf("Preview Trending A", "Preview Trending B"),
-        //     categories = mapOf("Preview Action" to listOf("Action 1", "Action 2"))
-        // )
-    }
+fun HomeScreenPreview_WithData() {
+    // This preview is more complex because HomeViewModel fetches data in init.
+    // To show data, you'd need a HomeViewModel instance that is already in a loaded state,
+    // or a fake GetMoviesUseCase that returns data immediately.
+    val fakeRepo = FakeMovieRepository() // Replace with a repo that has data for preview
+    val useCase = GetMoviesUseCase(fakeRepo)
+    val dataViewModel = HomeViewModel(useCase)
+    // To actually show data, you'd need to make fakeRepo return some movies.
+    // For example, modify FakeMovieRepository to return mock movies.
+    // This is becoming more involved than a simple @Preview.
+    // For now, this will show the screen after initial (empty) load.
     TomatoTheme {
         HomeScreen(
-            viewModel = dataViewModel, // A new instance for preview
-            onNavigateToDetails = { _, _ -> },
-            onNavigateToCategoryList = {}
+            viewModel = dataViewModel,
+            onNavigateToDetails = {},
+            onNavigateToCategoryList = { _, _ -> }
         )
     }
 }

@@ -1,76 +1,121 @@
 package com.halibiram.tomato.feature.home.presentation.component
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.halibiram.tomato.ui.components.TomatoCard
+import com.halibiram.tomato.domain.model.Movie
+import com.halibiram.tomato.ui.components.TomatoCard // Assuming TomatoCard is in this path
 import com.halibiram.tomato.ui.theme.TomatoTheme
 
 @Composable
 fun TrendingSection(
-    items: List<String>, // Replace String with your actual data model for trending content
-    onItemClick: (itemId: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    title: String,
+    movies: List<Movie>,
+    isLoading: Boolean,
+    error: String?,
+    onMovieClick: (movieId: String) -> Unit,
+    onRetry: (() -> Unit)? = null
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "Trending Now",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 8.dp)
+            text = title,
+            style = MaterialTheme.typography.headlineSmall, // Consistent with FeaturedSection title
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
         )
-        if (items.isNotEmpty()) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(items) { item ->
-                    TomatoCard(
-                        modifier = Modifier
-                            .width(180.dp) // Example width for trending items
-                            .height(250.dp) // Example height
-                            .clickable { onItemClick(item) } // Assuming item itself is the ID
-                    ) {
-                        // Content of the card
-                        Text(text = item, modifier = Modifier.padding(8.dp))
+
+        when {
+            isLoading -> {
+                Box(modifier = Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            error != null -> {
+                Column(
+                    modifier = Modifier.fillMaxWidth().height(220.dp).padding(horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("Error: $error", color = MaterialTheme.colorScheme.error)
+                    onRetry?.let {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = it) { Text("Retry") }
                     }
                 }
             }
-        } else {
-            Text("No trending content available at the moment.")
+            movies.isEmpty() -> {
+                 Box(modifier = Modifier.fillMaxWidth().height(220.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+                    Text("No trending movies to display.")
+                }
+            }
+            else -> {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(movies, key = { it.id }) { movie ->
+                        TomatoCard(
+                            movie = movie,
+                            onClick = { onMovieClick(movie.id) }
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun TrendingSectionPreview() {
+fun TrendingSectionPreview_Loaded() {
+    val sampleMovies = listOf(
+        Movie("3", "Trending Movie A", "Desc A", null, "2023", null, 7.5),
+        Movie("4", "Trending Movie B", "Desc B", null, "2022", null, 8.5)
+    )
     TomatoTheme {
         TrendingSection(
-            items = listOf("Trending Show 1", "Trending Movie X", "Trending Show 2"),
-            onItemClick = {}
+            title = "Trending Now",
+            movies = sampleMovies,
+            isLoading = false,
+            error = null,
+            onMovieClick = {}
         )
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun TrendingSectionEmptyPreview() {
+fun TrendingSectionPreview_Loading() {
     TomatoTheme {
         TrendingSection(
-            items = emptyList(),
-            onItemClick = {}
+            title = "Trending Now",
+            movies = emptyList(),
+            isLoading = true,
+            error = null,
+            onMovieClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun TrendingSectionPreview_Error() {
+    TomatoTheme {
+        TrendingSection(
+            title = "Trending Now",
+            movies = emptyList(),
+            isLoading = false,
+            error = "Cannot load trending movies",
+            onMovieClick = {},
+            onRetry = {}
         )
     }
 }

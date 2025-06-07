@@ -3,164 +3,153 @@ package com.halibiram.tomato.feature.player.presentation
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-// import com.google.android.exoplayer2.ExoPlayer // Assuming ExoPlayer usage
-// import com.halibiram.tomato.feature.player.navigation.PlayerArgs // If using Args class
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import com.halibiram.tomato.core.player.exoplayer.PlayerManager
+import com.halibiram.tomato.core.player.exoplayer.PlayerState // Core player state
+import com.halibiram.tomato.feature.player.navigation.PlayerArgs // Assuming nav args helper
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-// Data class for media item being played (simplified)
-data class MediaItem(
-    val id: String,
-    val title: String,
-    val videoUrl: String,
-    val artworkUrl: String? = null,
-    val seriesTitle: String? = null, // For TV shows
-    val episodeTitle: String? = null // For TV shows
-)
-
-// UI State for the player
-data class PlayerUiState(
-    val mediaItem: MediaItem? = null,
-    val isLoading: Boolean = true,
-    val isPlaying: Boolean = false,
-    val currentPositionMs: Long = 0L,
-    val totalDurationMs: Long = 0L,
-    val error: String? = null,
+// UI-specific state for PlayerScreen, if needed beyond core PlayerState
+data class PlayerScreenUiState(
     val controlsVisible: Boolean = true,
-    val isBuffering: Boolean = false,
-    val playbackSpeed: Float = 1.0f,
-    // Add other relevant states: subtitles, quality, next episode, etc.
+    val isFullScreen: Boolean = false, // Placeholder for fullscreen state
+    val mediaTitle: String = "Loading...", // To display title on overlay
+    val availableSubtitleTracks: List<androidx.media3.common.TrackGroup> = emptyList(),
+    val selectedSubtitleTrackParams: androidx.media3.common.TrackSelectionParameters? = null
+    // Add other UI specific states: e.g., error messages formatted for UI, settings panel visibility
 )
 
-// @HiltViewModel
-class PlayerViewModel /*@Inject constructor(
+@HiltViewModel
+class PlayerViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
-    // private val exoPlayer: ExoPlayer, // Injected ExoPlayer instance
-    // private val playerRepository: PlayerRepository, // To fetch media details or save progress
-    // private val playerSettings: PlayerPreferences // To get user's player preferences
-)*/ : ViewModel() {
+    private val playerManager: PlayerManager
+) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(PlayerUiState())
-    val uiState: StateFlow<PlayerUiState> = _uiState
+    val corePlayerState: StateFlow<PlayerState> = playerManager.playerStateFlow
 
-    // private val mediaId: String? = savedStateHandle[PlayerArgs.MEDIA_ID_ARG] // Example with Nav Args
-    // private val mediaType: String? = savedStateHandle[PlayerArgs.MEDIA_TYPE_ARG]
+    private val _uiState = MutableStateFlow(PlayerScreenUiState())
+    val uiState: StateFlow<PlayerScreenUiState> = _uiState.asStateFlow()
+
+    private var hideControlsJob: Job? = null
+    private val controlsTimeoutMs = 3000L // Hide controls after 3 seconds of inactivity
+
+    // Media URL passed via navigation
+    private val mediaUrl: String? = savedStateHandle[PlayerArgs.MEDIA_URL_ARG] // Using PlayerArgs helper
 
     init {
-        // val mediaIdFromArgs = savedStateHandle.get<String>(PlayerArgs.MEDIA_ID_ARG)
-        // val mediaTypeFromArgs = savedStateHandle.get<String>(PlayerArgs.MEDIA_TYPE_ARG)
-        // if (mediaIdFromArgs != null && mediaTypeFromArgs != null) {
-        //     loadMediaContent(mediaIdFromArgs, mediaTypeFromArgs)
-        // } else {
-        //     _uiState.value = _uiState.value.copy(isLoading = false, error = "Media ID or Type missing")
-        // }
-        // setupExoPlayerListeners()
-        // applyPlayerPreferences()
+        // Collect from core player state to update media title or other UI specific states
+        viewModelScope.launch {
+            corePlayerState.collectLatest { coreState ->
+                _uiState.update {
+                    it.copy(
+                        mediaTitle = extractTitleFromCoreState(coreState), // Example
+                        availableSubtitleTracks = coreState.availableSubtitleTracks,
+                        selectedSubtitleTrackParams = coreState.selectedSubtitleTrackParameters
+                    )
+                }
+                // If controls are visible and player is playing, reset hide controls timer
+                if (_uiState.value.controlsVisible && coreState.isPlaying) {
+                    resetHideControlsTimer()
+                }
+            }
+        }
 
-        // Placeholder if no nav args are set up yet:
-        loadMediaContent("placeholder_id", "movie")
+        initializeAndPlayMedia()
     }
 
-    private fun loadMediaContent(mediaId: String, mediaType: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                // val item = playerRepository.getMediaDetails(mediaId, mediaType)
-                // Simulate fetch
-                kotlinx.coroutines.delay(500)
-                val simulatedItem = MediaItem(
-                    id = mediaId,
-                    title = if (mediaType == "movie") "Sample Movie Title" else "Sample Episode Title",
-                    videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", // Sample URL
-                    artworkUrl = "https://example.com/artwork.jpg",
-                    seriesTitle = if (mediaType == "series_episode") "Awesome Series" else null,
-                    episodeTitle = if (mediaType == "series_episode") "S01E01 - Pilot" else null
-                )
-                _uiState.value = _uiState.value.copy(mediaItem = simulatedItem, isLoading = false)
-                // preparePlayer(simulatedItem.videoUrl)
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = "Failed to load media: ${e.message}")
+    private fun extractTitleFromCoreState(coreState: PlayerState): String {
+        // Placeholder: In a real app, media metadata (title, etc.) might come from
+        // the MediaItem in ExoPlayer, or be fetched separately based on mediaId.
+        // For now, using a generic title or trying to get it from mediaUrl.
+        return mediaUrl?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Unknown Media"
+    }
+
+    private fun initializeAndPlayMedia() {
+        // playerManager.initializePlayer() // PlayerManager constructor can handle init if needed
+        if (mediaUrl != null) {
+            playerManager.playMedia(mediaUrl)
+            showControlsThenAutoHide() // Show controls initially
+        } else {
+            // Handle missing media URL - update UI state with an error
+            _uiState.update { it.copy(mediaTitle = "Error: Media URL not found") }
+            // corePlayerState might also reflect an error if playMedia fails due to no URL
+        }
+    }
+
+    fun play() {
+        playerManager.resumePlayback()
+    }
+
+    fun pause() {
+        playerManager.pausePlayback()
+    }
+
+    fun togglePlayPause() {
+        if (corePlayerState.value.isPlaying) {
+            playerManager.pausePlayback()
+            showControlsPermanently() // Keep controls visible when paused by user
+        } else {
+            playerManager.resumePlayback()
+            resetHideControlsTimer() // Hide controls after timeout when playback resumes
+        }
+    }
+
+    fun seekTo(positionMs: Long) {
+        playerManager.seekPlayback(positionMs)
+        resetHideControlsTimer() // User interaction, show controls
+    }
+
+    fun showControlsThenAutoHide() {
+        _uiState.update { it.copy(controlsVisible = true) }
+        resetHideControlsTimer()
+    }
+
+    private fun showControlsPermanently() {
+        hideControlsJob?.cancel()
+        _uiState.update { it.copy(controlsVisible = true) }
+    }
+
+    fun hideControls() {
+        _uiState.update { it.copy(controlsVisible = false) }
+    }
+
+    private fun resetHideControlsTimer() {
+        hideControlsJob?.cancel()
+        if (corePlayerState.value.isPlaying) { // Only auto-hide if playing
+            hideControlsJob = viewModelScope.launch {
+                delay(controlsTimeoutMs)
+                hideControls()
             }
         }
     }
 
-    // private fun preparePlayer(videoUrl: String) {
-    //     val mediaItem = com.google.android.exoplayer2.MediaItem.fromUri(videoUrl)
-    //     exoPlayer.setMediaItem(mediaItem)
-    //     exoPlayer.prepare()
-    //     // exoPlayer.playWhenReady = true // Auto-play or based on preference
-    // }
-
-    // private fun setupExoPlayerListeners() {
-    //     exoPlayer.addListener(object : Player.Listener {
-    //         override fun onIsPlayingChanged(isPlaying: Boolean) {
-    //             _uiState.value = _uiState.value.copy(isPlaying = isPlaying)
-    //         }
-    //         override fun onPlaybackStateChanged(playbackState: Int) {
-    //             _uiState.value = _uiState.value.copy(
-    //                 isBuffering = playbackState == Player.STATE_BUFFERING,
-    //                 totalDurationMs = exoPlayer.duration.coerceAtLeast(0L)
-    //             )
-    //             if (playbackState == Player.STATE_ENDED) {
-    //                 // Handle playback end (e.g., play next episode, show related)
-    //             }
-    //         }
-    //         // Implement other listeners: onPlayerError, onTimelineChanged, etc.
-    //     })
-    //     // Regularly update current position
-    //     viewModelScope.launch {
-    //         while (true) {
-    //             if (exoPlayer.isPlaying) {
-    //                 _uiState.value = _uiState.value.copy(currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L))
-    //             }
-    //             delay(1000) // Update every second
-    //         }
-    //     }
-    // }
-
-    // private fun applyPlayerPreferences() {
-    //     viewModelScope.launch {
-    //         playerSettings.playerSettingsFlow.collect { settings ->
-    //             exoPlayer.setPlaybackSpeed(settings.playbackSpeed)
-    //             _uiState.value = _uiState.value.copy(playbackSpeed = settings.playbackSpeed)
-    //             // Apply other settings like preferred subtitle language, quality etc.
-    //         }
-    //     }
-    // }
-
-    fun togglePlayPause() {
-        // if (exoPlayer.isPlaying) {
-        //     exoPlayer.pause()
-        // } else {
-        //     exoPlayer.play()
-        // }
-        _uiState.value = _uiState.value.copy(isPlaying = !_uiState.value.isPlaying) // Simulate
+    fun getExoPlayerInstance(): androidx.media3.exoplayer.ExoPlayer {
+        return playerManager.getExoPlayerInstance()
     }
 
-    fun seekForward(seconds: Int = 10) {
-        // val newPosition = (exoPlayer.currentPosition + seconds * 1000).coerceIn(0, exoPlayer.duration)
-        // exoPlayer.seekTo(newPosition)
-        // _uiState.value = _uiState.value.copy(currentPositionMs = newPosition) // Simulate
+    fun toggleFullScreen() { // Placeholder
+        _uiState.update { it.copy(isFullScreen = !it.isFullScreen) }
+        // Actual fullscreen implementation would involve system UI changes, activity window flags etc.
     }
 
-    fun seekBackward(seconds: Int = 10) {
-        // val newPosition = (exoPlayer.currentPosition - seconds * 1000).coerceIn(0, exoPlayer.duration)
-        // exoPlayer.seekTo(newPosition)
-        // _uiState.value = _uiState.value.copy(currentPositionMs = newPosition) // Simulate
+    fun selectSubtitleTrack(groupIndex: Int, trackIndex: Int) {
+        playerManager.setSubtitleTrack(trackIndex, groupIndex)
+        resetHideControlsTimer()
     }
 
-    fun onPlaybackSpeedChange(speed: Float) {
-        // exoPlayer.setPlaybackSpeed(speed)
-        _uiState.value = _uiState.value.copy(playbackSpeed = speed)
+    fun clearSubtitles() {
+        playerManager.clearSubtitleTrack()
+        resetHideControlsTimer()
     }
 
-    fun toggleControlsVisibility() {
-        _uiState.value = _uiState.value.copy(controlsVisible = !_uiState.value.controlsVisible)
-    }
 
     override fun onCleared() {
         super.onCleared()
-        // exoPlayer.release() // Release ExoPlayer when ViewModel is cleared
+        playerManager.release() // Release player when ViewModel is cleared
+        hideControlsJob?.cancel()
     }
 }

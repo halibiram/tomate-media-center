@@ -2,125 +2,144 @@ package com.halibiram.tomato.feature.search.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.halibiram.tomato.core.common.result.Result // Correct Result class
+import com.halibiram.tomato.domain.model.Movie // Using Movie domain model for search results
+import com.halibiram.tomato.domain.usecase.movie.SearchMoviesUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-// Placeholder for a search result item
-data class SearchResult(
-    val id: String,
-    val title: String,
-    val description: String,
-    val imageUrl: String? = null,
-    val type: String // e.g., "Movie", "Series"
-)
+// Re-defining SearchResult for UI if it's different from Domain Movie model.
+// For this task, SearchResults will be List<Movie>.
+// data class SearchResultItemUi( ... )
 
 data class SearchUiState(
-    val query: String = "",
-    val searchResults: List<SearchResult> = emptyList(),
-    val recentSearches: List<String> = emptyList(), // Could be more complex objects
+    val searchQuery: String = "",
     val isLoading: Boolean = false,
-    val isFocused: Boolean = false, // To show recent searches or suggestions
+    val searchResults: List<Movie> = emptyList(), // Changed from generic SearchResult to Movie
     val error: String? = null,
-    val noResultsFound: Boolean = false
+    val noResultsFound: Boolean = false, // To distinguish empty list from "no results for query"
+    val recentSearches: List<String> = emptyList() // Keep recent searches functionality
 )
 
-// @HiltViewModel
-class SearchViewModel /*@Inject constructor(
-    // private val searchRepository: SearchRepository,
-    // private val recentSearchesRepository: RecentSearchesRepository
-)*/ : ViewModel() {
+@OptIn(FlowPreview::class) // For debounce
+@HiltViewModel
+class SearchViewModel @Inject constructor(
+    private val searchMoviesUseCase: SearchMoviesUseCase
+    // private val recentSearchesRepository: RecentSearchesRepository // For managing recent searches
+) : ViewModel() {
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val _uiState = MutableStateFlow(SearchUiState())
-    val uiState: StateFlow<SearchUiState> = _uiState
+    val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
 
     init {
-        loadRecentSearches()
-    }
+        //  loadRecentSearches() // Load initial recent searches
 
-    fun onQueryChange(newQuery: String) {
-        _uiState.value = _uiState.value.copy(query = newQuery, isLoading = true, noResultsFound = false, error = null)
-        searchJob?.cancel() // Cancel previous search if any
-        if (newQuery.length < 2) { // Minimum query length to trigger search
-            _uiState.value = _uiState.value.copy(isLoading = false, searchResults = emptyList())
-            return
-        }
-        searchJob = viewModelScope.launch {
-            delay(500) // Debounce search queries
-            try {
-                // val results = searchRepository.search(newQuery)
-                // Simulate API call
-                val simulatedResults = List(5) { index ->
-                    SearchResult(
-                        id = "$newQuery$index",
-                        title = "Result for '$newQuery' #${index + 1}",
-                        description = "This is a description for item $index of query $newQuery.",
-                        type = if (index % 2 == 0) "Movie" else "Series"
-                    )
-                }.filter { it.title.contains(newQuery, ignoreCase = true) }
-
-                if (simulatedResults.isEmpty()){
-                    _uiState.value = _uiState.value.copy(isLoading = false, searchResults = emptyList(), noResultsFound = true)
-                } else {
-                    _uiState.value = _uiState.value.copy(isLoading = false, searchResults = simulatedResults, noResultsFound = false)
+        viewModelScope.launch {
+            _searchQuery
+                .debounce(500) // Debounce input: wait for 500ms of no new input
+                .distinctUntilChanged() // Only search if query text actually changed
+                .collectLatest { query -> // Use collectLatest to cancel previous searches if new query comes in
+                    if (query.length < 2) { // Minimum query length to trigger search
+                        _uiState.update { it.copy(searchResults = emptyList(), isLoading = false, noResultsFound = false, error = null) }
+                    } else {
+                        performSearch(query)
+                    }
                 }
-                addQueryToRecentSearches(newQuery)
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message ?: "Search failed")
-            }
         }
     }
 
-    fun onSearchSubmit(query: String = _uiState.value.query) {
-        if (query.isBlank()) return
-        _uiState.value = _uiState.value.copy(isFocused = false) // Hide recent searches/suggestions
-        onQueryChange(query) // Trigger search if not already triggered by text change
+    fun onSearchQueryChanged(newQuery: String) {
+        _searchQuery.value = newQuery
+        // isLoading will be handled by performSearch via collectLatest
     }
 
-    fun onFocusChange(isFocused: Boolean) {
-        _uiState.value = _uiState.value.copy(isFocused = isFocused)
-        if (isFocused) {
-            loadRecentSearches() // Show recent searches when search bar is focused
+    private fun performSearch(query: String, page: Int = 1) { // Added page for future pagination
+        searchJob?.cancel() // Cancel any existing search job
+        searchJob = viewModelScope.launch {
+            searchMoviesUseCase(query = query, page = page)
+                .onStart { _uiState.update { it.copy(isLoading = true, noResultsFound = false, error = null, searchQuery = query) } }
+                .catch { e -> // Catch unexpected errors from the flow itself
+                    _uiState.update { it.copy(isLoading = false, error = e.localizedMessage ?: "Unknown search error", noResultsFound = false) }
+                }
+                .collect { result ->
+                    when (result) {
+                        is Result.Loading -> {
+                            _uiState.update { it.copy(isLoading = true) }
+                        }
+                        is Result.Success -> {
+                            val movies = result.data
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    searchResults = movies,
+                                    noResultsFound = movies.isEmpty() && query.isNotEmpty(),
+                                    error = null
+                                )
+                            }
+                            if (movies.isNotEmpty()) {
+                                // addQueryToRecentSearches(query)
+                            }
+                        }
+                        is Result.Error -> {
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    error = result.exception.message ?: "Failed to perform search",
+                                    searchResults = emptyList(), // Clear results on error
+                                    noResultsFound = false
+                                )
+                            }
+                        }
+                    }
+                }
         }
     }
 
+    fun clearSearchQuery() {
+        _searchQuery.value = ""
+        _uiState.update { it.copy(searchResults = emptyList(), isLoading = false, noResultsFound = false, error = null, searchQuery = "") }
+        // loadRecentSearches() // Optionally show recent searches again
+    }
+
+    // --- Recent Searches (Placeholder, requires a repository) ---
     private fun loadRecentSearches() {
         viewModelScope.launch {
-            // val recent = recentSearchesRepository.getRecentSearches()
-            _uiState.value = _uiState.value.copy(recentSearches = listOf("Old query 1", "Previous search"))
+            // val recent = recentSearchesRepository.getRecentSearches().first()
+            // _uiState.update { it.copy(recentSearches = recent) }
+            _uiState.update { it.copy(recentSearches = listOf("Old query 1", "Previous search example")) } // Mock
         }
     }
 
     private fun addQueryToRecentSearches(query: String) {
         viewModelScope.launch {
             // recentSearchesRepository.addSearchQuery(query)
-            // For UI update, could also update the list here or rely on flow from repository
+            // loadRecentSearches() // Refresh
         }
-    }
-
-    fun clearSearchQuery() {
-        _uiState.value = _uiState.value.copy(query = "", searchResults = emptyList(), isLoading = false, noResultsFound = false)
-        onFocusChange(true) // Show recent searches again
     }
 
     fun onClearRecentSearches() {
         viewModelScope.launch {
             // recentSearchesRepository.clearAllRecentSearches()
-            _uiState.value = _uiState.value.copy(recentSearches = emptyList())
+            _uiState.update { it.copy(recentSearches = emptyList()) }
         }
     }
 
-    fun onRecentSearchClick(query: String) {
-        _uiState.value = _uiState.value.copy(query = query)
-        onSearchSubmit(query)
+    fun onRecentSearchClicked(query: String) {
+        _searchQuery.value = query // This will trigger search due to collectLatest on _searchQuery
+        // performSearch(query) // No longer needed here due to automatic collection
     }
 
-    fun onSearchResultClick(resultId: String, resultType: String) {
-        // Handle navigation to details, etc.
-        // analyticsService.trackEvent("search_result_clicked", mapOf("id" to resultId, "type" to resultType))
+    fun onSearchResultClick(movieId: String) {
+        // Handle navigation to movie details
+        // Log.d("SearchViewModel", "Movie clicked: $movieId")
     }
 }

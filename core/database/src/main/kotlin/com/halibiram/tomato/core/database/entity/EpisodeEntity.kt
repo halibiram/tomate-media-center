@@ -4,6 +4,8 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.TypeConverters
+import com.halibiram.tomato.core.database.converter.DateConverter
 import java.util.Date
 
 @Entity(
@@ -13,22 +15,23 @@ import java.util.Date
             entity = SeriesEntity::class,
             parentColumns = ["id"],
             childColumns = ["seriesId"],
-            onDelete = ForeignKey.CASCADE // If a series is deleted, its episodes are also deleted
+            onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["seriesId"])]
+    indices = [Index(value = ["seriesId"]), Index(value = ["seriesId", "seasonNumber"])] // Added compound index
 )
+@TypeConverters(DateConverter::class)
 data class EpisodeEntity(
     @PrimaryKey
     val id: String,
-    val seriesId: String, // Foreign key to SeriesEntity
+    val seriesId: String,
     val seasonNumber: Int,
     val episodeNumber: Int,
-    val name: String?,
+    val title: String?, // 'name' previously, standardized
     val overview: String?,
     val airDate: Date?,
-    val stillPath: String?, // Image for the episode
-    val voteAverage: Double?,
-    val voteCount: Int?,
-    val lastRefreshed: Date = Date()
+    val stillPath: String?,
+    val voteAverage: Double?, // 'rating' in domain model
+    val voteCount: Int? = null, // Added
+    val lastRefreshed: Date = Date() // Added
 )

@@ -1,75 +1,135 @@
 package com.halibiram.tomato.feature.home.presentation.component
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.halibiram.tomato.domain.model.Movie
 import com.halibiram.tomato.ui.components.TomatoCard
 import com.halibiram.tomato.ui.theme.TomatoTheme
 
 @Composable
 fun FeaturedSection(
-    items: List<String>, // Replace String with your actual data model for featured content
-    onItemClick: (itemId: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    title: String,
+    movies: List<Movie>,
+    isLoading: Boolean,
+    error: String?,
+    onMovieClick: (movieId: String) -> Unit,
+    onRetry: (() -> Unit)? = null // Optional retry callback
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "Featured",
+            text = title,
             style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
         )
-        // This is a placeholder. You'd typically use a LazyRow or a Pager for horizontal scrolling.
-        // For simplicity, showing one item.
-        if (items.isNotEmpty()) {
-            val firstItem = items.first() // Show only the first item as a placeholder
-            TomatoCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp) // Example height
-                    .clickable { onItemClick(firstItem) } // Assuming item itself is the ID
-            ) {
-                // Content of the card, e.g., Text(firstItem)
-                Text(text = "Featured: $firstItem", modifier = Modifier.padding(16.dp))
+
+        when {
+            isLoading -> {
+                Box(modifier = Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
             }
-        } else {
-            Text("No featured content available.")
+            error != null -> {
+                Column(
+                    modifier = Modifier.fillMaxWidth().height(220.dp).padding(horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("Error: $error", color = MaterialTheme.colorScheme.error)
+                    onRetry?.let {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = it) { Text("Retry") }
+                    }
+                }
+            }
+            movies.isEmpty() -> {
+                 Box(modifier = Modifier.fillMaxWidth().height(220.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+                    Text("No movies to display in this section.")
+                }
+            }
+            else -> {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(movies, key = { it.id }) { movie ->
+                        TomatoCard(
+                            movie = movie,
+                            onClick = { onMovieClick(movie.id) }
+                        )
+                    }
+                }
+            }
         }
-        // If using LazyRow:
-        // LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        //     items(items) { item ->
-        //         TomatoCard(/*...*/) { Text(item) }
-        //     }
-        // }
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun FeaturedSectionPreview() {
+fun FeaturedSectionPreview_Loaded() {
+    val sampleMovies = listOf(
+        Movie("1", "Movie 1", "Desc 1", null, "2023", null, 7.0),
+        Movie("2", "Movie 2", "Desc 2", null, "2022", null, 8.0)
+    )
     TomatoTheme {
         FeaturedSection(
-            items = listOf("Featured Movie Title 1", "Featured Show Title 2"),
-            onItemClick = {}
+            title = "Popular Movies",
+            movies = sampleMovies,
+            isLoading = false,
+            error = null,
+            onMovieClick = {}
         )
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun FeaturedSectionEmptyPreview() {
+fun FeaturedSectionPreview_Loading() {
     TomatoTheme {
         FeaturedSection(
-            items = emptyList(),
-            onItemClick = {}
+            title = "Popular Movies",
+            movies = emptyList(),
+            isLoading = true,
+            error = null,
+            onMovieClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun FeaturedSectionPreview_Error() {
+    TomatoTheme {
+        FeaturedSection(
+            title = "Popular Movies",
+            movies = emptyList(),
+            isLoading = false,
+            error = "Network request failed",
+            onMovieClick = {},
+            onRetry = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun FeaturedSectionPreview_Empty() {
+    TomatoTheme {
+        FeaturedSection(
+            title = "Popular Movies",
+            movies = emptyList(),
+            isLoading = false,
+            error = null,
+            onMovieClick = {}
         )
     }
 }

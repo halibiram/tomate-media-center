@@ -7,44 +7,57 @@ import com.halibiram.tomato.core.database.dao.BookmarkDao
 import com.halibiram.tomato.core.database.dao.DownloadDao
 import com.halibiram.tomato.core.database.dao.MovieDao
 import com.halibiram.tomato.core.database.dao.SeriesDao
-// import com.halibiram.tomato.core.database.migration.DatabaseMigrations // Assuming you have this
+import com.halibiram.tomato.core.database.migration.DatabaseMigrations // Assuming this exists for migrations
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
 
-// Placeholder for Dagger/Hilt module
+@Module
+@InstallIn(SingletonComponent::class)
 object DatabaseModule {
 
-    // @Provides
-    // @Singleton
+    @Provides
+    @Singleton
     fun provideTomatoDatabase(
-        // @ApplicationContext
-        context: Context
+        @ApplicationContext context: Context
     ): TomatoDatabase {
         return Room.databaseBuilder(
             context.applicationContext,
             TomatoDatabase::class.java,
-            "tomato_database"
+            TomatoDatabase.DATABASE_NAME // Use constant from TomatoDatabase
         )
-        // .addMigrations(*DatabaseMigrations.ALL_MIGRATIONS) // Add migrations if any
-        .fallbackToDestructiveMigration() // Placeholder: Use proper migrations in production
+        // Add migrations if any. For now, using fallbackToDestructiveMigration.
+        // .addMigrations(*DatabaseMigrations.ALL_MIGRATIONS)
+        .fallbackToDestructiveMigration() // Use proper migrations in production!
         .build()
     }
 
-    // @Provides
+    @Provides
+    @Singleton // DAOs should be singletons if the Database is a singleton
     fun provideMovieDao(database: TomatoDatabase): MovieDao {
         return database.movieDao()
     }
 
-    // @Provides
+    @Provides
+    @Singleton
     fun provideSeriesDao(database: TomatoDatabase): SeriesDao {
         return database.seriesDao()
     }
 
-    // @Provides
+    @Provides
+    @Singleton
     fun provideDownloadDao(database: TomatoDatabase): DownloadDao {
         return database.downloadDao()
     }
 
-    // @Provides
+    @Provides
+    @Singleton
     fun provideBookmarkDao(database: TomatoDatabase): BookmarkDao {
         return database.bookmarkDao()
     }
+
+    // No separate EpisodeDao provider as its methods are in SeriesDao
 }

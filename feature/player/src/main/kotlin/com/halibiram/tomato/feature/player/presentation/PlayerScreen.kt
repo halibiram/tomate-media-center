@@ -1,14 +1,18 @@
 package com.halibiram.tomato.feature.player.presentation
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,41 +24,42 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-// import com.google.android.exoplayer2.ExoPlayer // Assuming ExoPlayer
-// import com.google.android.exoplayer2.ui.StyledPlayerView // ExoPlayer's UI component
-import com.halibiram.tomato.feature.player.presentation.component.PlayerGestures
-import com.halibiram.tomato.feature.player.presentation.component.PlayerOverlay
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.ui.PlayerView
+import com.halibiram.tomato.core.player.exoplayer.PlayerState // Core state
+import com.halibiram.tomato.feature.player.presentation.component.PlayerControls
 import com.halibiram.tomato.ui.theme.TomatoTheme
 
-// Helper to find activity from context
+// Helper to find activity from context (already defined in previous step's PlayerScreen)
 fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
 }
 
+@SuppressLint("SourceLockedOrientationActivity") // If locking orientation
 @Composable
 fun PlayerScreen(
-    // viewModel: PlayerViewModel = hiltViewModel(), // With Hilt
-    viewModel: PlayerViewModel, // Pass for preview or non-Hilt
-    // exoPlayer: ExoPlayer, // Pass ExoPlayer instance if managed by DI/Activity
+    viewModel: PlayerViewModel = hiltViewModel(),
+    // mediaUrl: String, // Passed via NavHost in real app, ViewModel gets from SavedStateHandle
     onNavigateBack: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val corePlayerState by viewModel.corePlayerState.collectAsStateWithLifecycle()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var isScreenVisible by remember { mutableStateOf(true) } // To manage player release
 
-    // Manage screen orientation and system UI (immersive mode)
+    // Screen lifecycle management (fullscreen, keep screen on, orientation)
     DisposableEffect(Unit) {
         val activity = context.findActivity()
         activity?.let {
-            // Store original flags
             val originalSystemUiVisibility = it.window.decorView.systemUiVisibility
-            val originalLayoutParams = it.window.attributes.flags
+            val originalLayoutParamsFlags = it.window.attributes.flags
+            val originalOrientation = it.requestedOrientation
 
-            // Enter immersive mode
+            // Enter immersive mode & keep screen on
             it.window.decorView.systemUiVisibility = (
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -64,146 +69,138 @@ fun PlayerScreen(
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
             )
             it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            // Consider orientation lock here if needed: activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            // Lock to landscape for video playback
+            it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
+
         onDispose {
             activity?.let {
-                // Restore original system UI visibility and layout params
                 it.window.decorView.systemUiVisibility = originalSystemUiVisibility
-                it.window.attributes.flags = originalLayoutParams // This might need more care to restore properly
+                // Be careful when restoring flags, ensure it's exactly what was there.
+                // it.window.attributes.flags = originalLayoutParamsFlags // This might be too broad
                 it.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                // activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                it.requestedOrientation = originalOrientation // Restore original orientation
             }
         }
     }
 
-    // Lifecycle observer for pausing/resuming player
-    // LocalLifecycleOwner.current.lifecycle.addObserver(remember {
-    //     LifecycleEventObserver { _, event ->
-    //         when (event) {
-    //             Lifecycle.Event.ON_PAUSE -> if (isScreenVisible) exoPlayer.pause()
-    //             Lifecycle.Event.ON_RESUME -> if (isScreenVisible) exoPlayer.play()
-    //             Lifecycle.Event.ON_DESTROY -> if (isScreenVisible) { /* exoPlayer.release() handled by ViewModel */ }
-    //             else -> {}
-    //         }
-    //     }
-    // })
+    // Handle Android back button press for custom behavior (e.g., exit fullscreen first)
+    BackHandler {
+        // If in fullscreen and want to exit fullscreen first:
+        // if (uiState.isFullScreen) { viewModel.toggleFullScreen() } else { onNavigateBack() }
+        onNavigateBack()
+    }
+
+    // Observe lifecycle events for play/pause
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> viewModel.pause()
+                Lifecycle.Event.ON_RESUME -> viewModel.play() // Or based on previous state
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black) // Player background is typically black
-    ) {
-        if (uiState.isLoading || uiState.mediaItem == null) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-        } else if (uiState.error != null) {
-            Text(
-                text = "Error: ${uiState.error}",
-                color = Color.Red,
-                modifier = Modifier.align(Alignment.Center).padding(16.dp)
-            )
-        } else {
-            // ExoPlayer View using AndroidView
-            // AndroidView(
-            //     factory = { ctx ->
-            //         StyledPlayerView(ctx).apply {
-            //             player = exoPlayer
-            //             useController = false // We use our custom controls via PlayerOverlay
-            //             layoutParams = ViewGroup.LayoutParams(
-            //                 ViewGroup.LayoutParams.MATCH_PARENT,
-            //                 ViewGroup.LayoutParams.MATCH_PARENT
-            //             )
-            //         }
-            //     },
-            //     modifier = Modifier.fillMaxSize()
-            // )
-            // Placeholder for Player View:
-            Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray)) {
-                 Text("Player View (ExoPlayer/Media3)", color = Color.White, modifier = Modifier.align(Alignment.Center))
-            }
-
-
-            PlayerGestures(
-                onToggleControls = viewModel::toggleControlsVisibility,
-                onDoubleTapSeekForward = viewModel::seekForward,
-                onDoubleTapSeekBackward = viewModel::seekBackward
+            .background(Color.Black)
+            .clickable( // Click on the player area to toggle controls visibility
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null // No ripple effect on the player view itself
             ) {
-                PlayerOverlay(
-                    mediaItem = uiState.mediaItem,
-                    isVisible = uiState.controlsVisible,
-                    isPlaying = uiState.isPlaying,
-                    isLocked = false, // TODO: Add isLocked to UiState and ViewModel
-                    currentPositionMs = uiState.currentPositionMs,
-                    totalDurationMs = uiState.totalDurationMs,
-                    playbackSpeed = uiState.playbackSpeed,
-                    onPlayPauseToggle = viewModel::togglePlayPause,
-                    onSeekForward = { viewModel.seekForward() },
-                    onSeekBackward = { viewModel.seekBackward() },
-                    // onNextEpisode = { viewModel.playNextEpisode() }, // TODO
-                    // onPreviousEpisode = { viewModel.playPreviousEpisode() }, // TODO
-                    onPlaybackSpeedChange = viewModel::onPlaybackSpeedChange,
-                    onSettingsClick = { /* TODO: Show settings dialog */ },
-                    onLockToggle = { /* TODO: Implement lock toggle in ViewModel */ },
-                    onNavigateBack = {
-                        isScreenVisible = false // Ensure player is released if nav occurs before dispose
-                        onNavigateBack()
-                    }
+                if (uiState.controlsVisible) {
+                    viewModel.hideControls() // If visible, tapping screen hides them
+                } else {
+                    viewModel.showControlsThenAutoHide() // If hidden, tapping shows them temporarily
+                }
+            }
+    ) {
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    player = viewModel.getExoPlayerInstance()
+                    useController = false // Using custom Compose controls
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    // Adjust resizeMode as needed, e.g., RESIZE_MODE_FIT, RESIZE_MODE_ZOOM
+                    // setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Loading Indicator centered on screen
+        if (corePlayerState.isLoading && !corePlayerState.isPlaying) { // Show loading only if not already playing (e.g. initial buffer)
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+        }
+
+        // Player Controls (conditionally visible)
+        // PlayerControls is now animated internally by PlayerOverlay in the original design
+        // For this step, let's directly use PlayerControls if PlayerOverlay is not yet implemented
+        // or if we want to simplify. The prompt focuses on PlayerControls.
+        // The original PlayerScreen had PlayerGestures wrapping PlayerOverlay, which then had PlayerControls.
+        // Let's assume PlayerControls is directly used for now, visibility handled by its own logic or uiState.controlsVisible
+
+        PlayerControls( // Assuming PlayerControls handles its own visibility via AnimatedVisibility or similar
+            isVisible = uiState.controlsVisible,
+            playerState = corePlayerState, // Pass the core player state
+            mediaTitle = uiState.mediaTitle,
+            onPlayPauseToggle = { viewModel.togglePlayPause() },
+            onSeekForward = { viewModel.seekTo(corePlayerState.currentPositionMs + 10000) }, // Example 10s
+            onSeekBackward = { viewModel.seekTo(corePlayerState.currentPositionMs - 10000) }, // Example 10s
+            onFullScreenToggle = { viewModel.toggleFullScreen() },
+            onSettingsClick = { /* TODO: Show settings like subtitles/quality */ },
+            onSeekTo = { newPositionMs -> viewModel.seekTo(newPositionMs) }, // For slider interaction
+            // Pass subtitle related callbacks and data
+            // availableSubtitleTracks = uiState.availableSubtitleTracks,
+            // selectedSubtitleTrackParams = uiState.selectedSubtitleTrackParams,
+            // onSubtitleTrackSelected = { group, trackIndex -> viewModel.selectSubtitleTrack(group, trackIndex) },
+            // onClearSubtitles = { viewModel.clearSubtitles() },
+            modifier = Modifier.fillMaxSize() // PlayerControls will align itself (e.g., to bottom)
+        )
+
+
+        // Display Player Errors (if any)
+        corePlayerState.error?.let { error ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Playback Error: ${error.message ?: "Unknown error"}",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyLarge
                 )
+                // Optional: Add a retry button here that calls viewModel.initializeAndPlayMedia() or similar
             }
         }
     }
 }
 
-
+// Preview setup for PlayerScreen is complex due to ExoPlayer and SavedStateHandle.
+// A simplified preview might pass a fake ViewModel or mock PlayerManager.
 @Preview(showBackground = true)
 @Composable
-fun PlayerScreenPreview_Loading() {
-    val loadingViewModel = PlayerViewModel().apply {
-        // Simulate loading state if needed, though default might be loading
-    }
+fun PlayerScreenPreview() {
+    // This preview will likely not render the ExoPlayer view correctly.
+    // It's for basic layout checks of controls if they were visible.
+    // A FakePlayerViewModel would be needed for more meaningful previews.
     TomatoTheme {
-        PlayerScreen(
-            viewModel = loadingViewModel,
-            // exoPlayer = ExoPlayer.Builder(LocalContext.current).build(), // Preview needs an instance
-            onNavigateBack = {}
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun PlayerScreenPreview_Error() {
-    val errorViewModel = PlayerViewModel().apply {
-        // Simulate error state (PlayerViewModel needs modification to allow this for preview)
-        // _uiState.value = PlayerUiState(isLoading = false, error = "Failed to load video")
-    }
-    TomatoTheme {
-        PlayerScreen(
-            viewModel = errorViewModel,
-            // exoPlayer = ExoPlayer.Builder(LocalContext.current).build(),
-            onNavigateBack = {}
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun PlayerScreenPreview_Playing() {
-    val playingViewModel = PlayerViewModel().apply {
-        // Simulate playing state (PlayerViewModel needs modification)
-        // _uiState.value = PlayerUiState(
-        //     mediaItem = MediaItem("id", "Big Buck Bunny", "url"),
-        //     isLoading = false,
-        //     isPlaying = true,
-        //     controlsVisible = true
-        // )
-    }
-    TomatoTheme {
-        PlayerScreen(
-            viewModel = playingViewModel,
-            // exoPlayer = ExoPlayer.Builder(LocalContext.current).build(),
-            onNavigateBack = {}
-        )
+        // PlayerScreen(onNavigateBack = {}) // This would crash without Hilt/proper ViewModel
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+            Text("Player Screen Preview (ExoPlayer view not available in standard preview)", color = Color.White, modifier = Modifier.align(Alignment.Center))
+        }
     }
 }

@@ -1,41 +1,39 @@
 package com.halibiram.tomato.core.datastore.preferences
 
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.floatPreferencesKey
-import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import java.io.IOException
+import javax.inject.Inject
 
-data class PlayerSettings(
-    val preferredSubtitleLanguage: String,
-    val playbackSpeed: Float,
+data class PlayerPreferencesData(
+    val defaultSubtitleLanguage: String,
+    val preferredResolution: String, // e.g., "Auto", "1080p", "720p", "480p"
     val autoPlayNext: Boolean,
-    val preferredQuality: Int // e.g., 0 for Auto, 480, 720, 1080
+    val seekIncrementSeconds: Int, // e.g., 5, 10, 15, 30 seconds
+    val playbackSpeed: Float // Added from previous version of this file
 )
 
-class PlayerPreferences(private val dataStore: DataStore<Preferences>) {
+class PlayerPreferences @Inject constructor(private val dataStore: DataStore<Preferences>) {
 
     companion object {
-        const val PLAYER_PREFERENCES_NAME = "player_prefs"
-        private val PREFERRED_SUBTITLE_LANG_KEY = stringPreferencesKey("preferred_subtitle_language")
-        private val PLAYBACK_SPEED_KEY = floatPreferencesKey("playback_speed")
-        private val AUTO_PLAY_NEXT_KEY = booleanPreferencesKey("auto_play_next")
-        private val PREFERRED_QUALITY_KEY = intPreferencesKey("preferred_quality")
+        internal val DEFAULT_SUBTITLE_LANGUAGE_KEY = stringPreferencesKey("default_subtitle_language")
+        internal val PREFERRED_RESOLUTION_KEY = stringPreferencesKey("preferred_resolution")
+        internal val AUTO_PLAY_NEXT_KEY = booleanPreferencesKey("auto_play_next")
+        internal val SEEK_INCREMENT_SECONDS_KEY = intPreferencesKey("seek_increment_seconds")
+        internal val PLAYBACK_SPEED_KEY = floatPreferencesKey("playback_speed") // Added
 
-        const val DEFAULT_SUBTITLE_LANGUAGE = "en" // English
-        const val DEFAULT_PLAYBACK_SPEED = 1.0f
+        // Default values
+        const val DEFAULT_SUBTITLE_LANGUAGE = "en"
+        const val DEFAULT_RESOLUTION = "Auto"
         const val DEFAULT_AUTO_PLAY_NEXT = true
-        const val DEFAULT_QUALITY = 0 // Auto
+        const val DEFAULT_SEEK_INCREMENT_SECONDS = 10
+        const val DEFAULT_PLAYBACK_SPEED = 1.0f
     }
 
-    val playerSettingsFlow: Flow<PlayerSettings> = dataStore.data
+    val playerPreferencesFlow: Flow<PlayerPreferencesData> = dataStore.data
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -43,34 +41,46 @@ class PlayerPreferences(private val dataStore: DataStore<Preferences>) {
                 throw exception
             }
         }.map { preferences ->
-            val subtitleLang = preferences[PREFERRED_SUBTITLE_LANG_KEY] ?: DEFAULT_SUBTITLE_LANGUAGE
-            val speed = preferences[PLAYBACK_SPEED_KEY] ?: DEFAULT_PLAYBACK_SPEED
-            val autoPlay = preferences[AUTO_PLAY_NEXT_KEY] ?: DEFAULT_AUTO_PLAY_NEXT
-            val quality = preferences[PREFERRED_QUALITY_KEY] ?: DEFAULT_QUALITY
-            PlayerSettings(subtitleLang, speed, autoPlay, quality)
+            mapPlayerPreferences(preferences)
         }
 
-    suspend fun updatePreferredSubtitleLanguage(language: String) {
+    private fun mapPlayerPreferences(preferences: Preferences): PlayerPreferencesData {
+        val subtitleLang = preferences[DEFAULT_SUBTITLE_LANGUAGE_KEY] ?: DEFAULT_SUBTITLE_LANGUAGE
+        val resolution = preferences[PREFERRED_RESOLUTION_KEY] ?: DEFAULT_RESOLUTION
+        val autoPlay = preferences[AUTO_PLAY_NEXT_KEY] ?: DEFAULT_AUTO_PLAY_NEXT
+        val seekIncrement = preferences[SEEK_INCREMENT_SECONDS_KEY] ?: DEFAULT_SEEK_INCREMENT_SECONDS
+        val speed = preferences[PLAYBACK_SPEED_KEY] ?: DEFAULT_PLAYBACK_SPEED
+
+        return PlayerPreferencesData(subtitleLang, resolution, autoPlay, seekIncrement, speed)
+    }
+
+    suspend fun updateDefaultSubtitleLanguage(language: String) {
         dataStore.edit { preferences ->
-            preferences[PREFERRED_SUBTITLE_LANG_KEY] = language
+            preferences[DEFAULT_SUBTITLE_LANGUAGE_KEY] = language
+        }
+    }
+
+    suspend fun updatePreferredResolution(resolution: String) {
+        dataStore.edit { preferences ->
+            preferences[PREFERRED_RESOLUTION_KEY] = resolution
+        }
+    }
+
+    suspend fun updateAutoPlayNext(autoPlay: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[AUTO_PLAY_NEXT_KEY] = autoPlay
+        }
+    }
+
+    suspend fun updateSeekIncrementSeconds(seconds: Int) {
+        dataStore.edit { preferences ->
+            preferences[SEEK_INCREMENT_SECONDS_KEY] = seconds
         }
     }
 
     suspend fun updatePlaybackSpeed(speed: Float) {
         dataStore.edit { preferences ->
             preferences[PLAYBACK_SPEED_KEY] = speed
-        }
-    }
-
-    suspend fun toggleAutoPlayNext(enable: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[AUTO_PLAY_NEXT_KEY] = enable
-        }
-    }
-
-    suspend fun updatePreferredQuality(quality: Int) {
-        dataStore.edit { preferences ->
-            preferences[PREFERRED_QUALITY_KEY] = quality
         }
     }
 }
