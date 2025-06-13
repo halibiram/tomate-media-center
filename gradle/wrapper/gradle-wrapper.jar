@@ -1,0 +1,3 @@
+This is a placeholder for the gradle-wrapper.jar binary file.
+In a real project, this would be the actual Gradle Wrapper JAR.
+Do not commit this text file if replacing with the actual JAR.
