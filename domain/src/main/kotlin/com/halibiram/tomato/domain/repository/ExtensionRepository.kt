@@ -25,8 +25,9 @@ interface ExtensionRepository {
     suspend fun disableExtension(id: String)
 
     // Installation/Uninstallation might be more complex, involving file operations or Package Manager
-    suspend fun installExtension(filePath: String): Result<Unit> // Result might indicate success/failure/reason
+    suspend fun installExtension(extension: Extension, sourceUri: String?): Result<Unit>
     suspend fun uninstallExtension(id: String): Result<Unit>
+    suspend fun updateExtensionLoadingError(id: String, error: String?) // New method
 
     // May also include methods to fetch extension sources or browse a repository of extensions
 }

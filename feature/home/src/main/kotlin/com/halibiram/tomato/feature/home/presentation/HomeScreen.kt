@@ -1,8 +1,11 @@
 package com.halibiram.tomato.feature.home.presentation
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -19,21 +22,24 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.halibiram.tomato.domain.model.Movie
 import com.halibiram.tomato.domain.usecase.movie.MovieListType
 import com.halibiram.tomato.feature.home.presentation.component.CategorySection
-import com.halibiram.tomato.feature.home.presentation.component.FeaturedSection // Assuming this is for "Popular"
-// import com.halibiram.tomato.feature.home.presentation.component.TrendingSection // Already imported by FeaturedSection, actually different.
+import com.halibiram.tomato.feature.home.presentation.component.FeaturedSection
 import com.halibiram.tomato.feature.home.presentation.component.TrendingSection
-import com.halibiram.tomato.ui.components.TomatoTopBar // Assuming this is your custom top bar
+import com.halibiram.tomato.feature.home.presentation.component.ExtensionMovieCard // Import new card
+import com.halibiram.tomato.ui.components.TomatoTopBar
 import com.halibiram.tomato.ui.theme.TomatoTheme
+// import com.halibiram.tomato.domain.usecase.movie.GetMoviesUseCase // For FakeRepo in Preview
+// import com.halibiram.tomato.domain.usecase.movie.GetExtensionMoviesUseCase // For FakeRepo in Preview
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
-    onNavigateToDetails: (movieId: String) -> Unit,
+    onNavigateToDetails: (movieId: String) -> Unit, // For regular movies
+    onNavigateToExtensionMovieDetails: (movieSourceItemId: String, extensionId: String?) -> Unit, // For extension movies
     onNavigateToCategoryList: (categoryId: String, categoryName: String) -> Unit
-    // Add other navigation callbacks if needed, e.g., for "View More" on trending
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
@@ -41,45 +47,33 @@ fun HomeScreen(
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TomatoTopBar(
-                title = "Tomato Home", // Or some dynamic title
-                // scrollBehavior = scrollBehavior // If your TomatoTopBar supports it
-            )
+            TomatoTopBar(title = "Tomato Home")
         }
     ) { innerPadding ->
-        // Overall loading state for the whole screen, if all initial calls are critical
-        if (uiState.isLoadingPopular && uiState.isLoadingTrending && uiState.popularMovies.isEmpty() && uiState.trendingMovies.isEmpty()) {
+        if (uiState.isLoadingPopular && uiState.isLoadingTrending && uiState.isLoadingExtensionPopular &&
+            uiState.popularMovies.isEmpty() && uiState.trendingMovies.isEmpty() && uiState.extensionPopularMovies.isEmpty()
+        ) {
              Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
             }
-        } else if (uiState.screenError != null) { // A general screen error
+        } else if (uiState.screenError != null) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
+                modifier = Modifier.fillMaxSize().padding(innerPadding).padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Error: ${uiState.screenError}",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                // Add a general retry button if applicable for screenError
+                Text(text = "Error: ${uiState.screenError}", color = MaterialTheme.colorScheme.error)
             }
         } else {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding) // Apply padding from scaffold
-                    .verticalScroll(rememberScrollState()) // Make the whole screen scrollable
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
             ) {
-                // Popular Movies Section (using FeaturedSection composable)
+                // Popular Movies Section
                 FeaturedSection(
                     title = "Popular Movies",
                     movies = uiState.popularMovies,
@@ -87,106 +81,128 @@ fun HomeScreen(
                     error = uiState.errorPopular,
                     onMovieClick = onNavigateToDetails,
                     onRetry = { viewModel.onRetrySection(MovieListType.POPULAR) },
-                    modifier = Modifier.padding(top = 16.dp) // Add padding between sections
+                    modifier = Modifier.padding(top = 16.dp)
                 )
-
-                Spacer(modifier = Modifier.height(24.dp)) // Space between sections
+                Spacer(modifier = Modifier.height(24.dp))
 
                 // Trending Movies Section
                 TrendingSection(
-                    title = "Trending Today", // Or pass timeWindow for dynamic title
+                    title = "Trending Today",
                     movies = uiState.trendingMovies,
                     isLoading = uiState.isLoadingTrending,
                     error = uiState.errorTrending,
                     onMovieClick = onNavigateToDetails,
                     onRetry = { viewModel.onRetrySection(MovieListType.TRENDING) }
                 )
-
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Dynamic Category Sections
-                // Example: Iterate over a predefined list of categories or fetched categories
-                // For this placeholder, using the example category from HomeViewModel
-                if (uiState.categoryMovies.containsKey("Action")) { // Assuming "Action" is a key used in VM
+                // Extension Popular Movies Section
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "From Your Extensions",
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+                    )
+                    when {
+                        uiState.isLoadingExtensionPopular -> {
+                            Box(modifier = Modifier.fillMaxWidth().height(230.dp), contentAlignment = Alignment.Center) { // Approx height of card + padding
+                                CircularProgressIndicator()
+                            }
+                        }
+                        uiState.errorExtensionPopular != null -> {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().height(230.dp).padding(horizontal = 16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text("Error: ${uiState.errorExtensionPopular}", color = MaterialTheme.colorScheme.error)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(onClick = { viewModel.onRetryExtensionPopular() }) { Text("Retry Extensions") }
+                            }
+                        }
+                        uiState.extensionPopularMovies.isEmpty() -> {
+                            Box(modifier = Modifier.fillMaxWidth().height(100.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) { // Reduced height for empty message
+                                Text("No movies found from enabled extensions.")
+                            }
+                        }
+                        else -> {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(uiState.extensionPopularMovies, key = { "${it.id}_${it.title}" }) { movieItem ->
+                                    ExtensionMovieCard(
+                                        movieItem = movieItem,
+                                        onClick = {
+                                            // To navigate to details, need to know which extension this item belongs to,
+                                            // if detail fetching is also via extension.
+                                            // MovieSourceItem might need an 'extensionId' field.
+                                            // For now, just passing item id.
+                                            viewModel.onExtensionMovieItemClick(movieItem) // For VM logic
+                                            onNavigateToExtensionMovieDetails(movieItem.id, null /* Placeholder for extensionId */)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+
+
+                // Dynamic Category Sections (from main repository)
+                // Example for "Action"
+                val actionCategoryDisplayName = "Action Packed"
+                if (uiState.categoryMovies.containsKey("Action") || uiState.isLoadingCategory && uiState.categoryMovies.isEmpty()) {
                      CategorySection(
-                        categoryTitle = "Action Packed",
+                        categoryTitle = actionCategoryDisplayName,
                         movies = uiState.categoryMovies["Action"] ?: emptyList(),
-                        isLoading = uiState.isLoadingCategory, // This is a general flag, might need per-category flags
-                        error = uiState.errorCategory, // General category error
+                        // For categories, isLoadingCategory and errorCategory are general.
+                        // A more granular approach would have per-category loading/error states.
+                        isLoading = uiState.isLoadingCategory && (uiState.categoryMovies["Action"] == null || uiState.categoryMovies["Action"]!!.isEmpty()),
+                        error = if (uiState.categoryMovies["Action"] == null && !uiState.isLoadingCategory) uiState.errorCategory else null,
                         onMovieClick = onNavigateToDetails,
-                        onViewMoreClick = { onNavigateToCategoryList("action_movies_placeholder_id", "Action Packed") },
-                        onRetry = { viewModel.onRetrySection(MovieListType.BY_CATEGORY, "action_movies_placeholder_id", "Action Packed") }
+                        onViewMoreClick = { onNavigateToCategoryList("action_movies_placeholder_id", actionCategoryDisplayName) },
+                        onRetry = { viewModel.onRetrySection(MovieListType.BY_CATEGORY, "action_movies_placeholder_id", actionCategoryDisplayName) }
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                 }
-
-                // Add more sections as needed (e.g., different categories, genres, etc.)
-
-                // Example for another category if your ViewModel loads multiple
-                 if (uiState.categoryMovies.containsKey("Comedy")) {
-                     CategorySection(
-                        categoryTitle = "Comedy Greats",
-                        movies = uiState.categoryMovies["Comedy"] ?: emptyList(),
-                        isLoading = uiState.isLoadingCategory,
-                        error = uiState.errorCategory,
-                        onMovieClick = onNavigateToDetails,
-                        onViewMoreClick = { onNavigateToCategoryList("comedy_movies_placeholder_id", "Comedy Greats") },
-                        onRetry = { viewModel.onRetrySection(MovieListType.BY_CATEGORY, "comedy_movies_placeholder_id", "Comedy Greats") }
-                    )
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-
-
-                Spacer(modifier = Modifier.height(16.dp)) // Padding at the bottom of the scrollable content
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
 }
 
+// Preview requires providing fake UseCases to the ViewModel for meaningful preview.
 @Preview(showBackground = true)
 @Composable
-fun HomeScreenPreview_Loading() {
-    val mockViewModel = HomeViewModel(GetMoviesUseCase(FakeMovieRepository())) // Needs a fake repo for preview
-    // Simulate loading state in mockViewModel if possible, or rely on its initial state
-    // For a simple preview, we can't easily control the internal state of a Hilt VM.
-    // It's better to pass a VM instance in previews that is pre-configured.
-    // This preview will show the initial state of HomeViewModel.
+fun HomeScreenPreview_WithExtensionSection() {
+    val fakeGetMoviesUseCase = GetMoviesUseCase(FakeMovieRepository())
+    val fakeGetExtensionMoviesUseCase : GetExtensionMoviesUseCase = mockk {
+        coEvery { getPopularMovies(any()) } returns com.halibiram.tomato.core.common.result.Result.Success(
+            listOf(
+                com.halibiram.tomato.feature.extensions.api.MovieSourceItem("e1", "Ext Movie 1", null, "2023"),
+                com.halibiram.tomato.feature.extensions.api.MovieSourceItem("e2", "Ext Movie 2", null, "2024")
+            )
+        )
+    }
+    val previewViewModel = HomeViewModel(fakeGetMoviesUseCase, fakeGetExtensionMoviesUseCase)
+
     TomatoTheme {
         HomeScreen(
-            viewModel = mockViewModel, // Provide a controlled or fake ViewModel for previews
+            viewModel = previewViewModel,
             onNavigateToDetails = {},
+            onNavigateToExtensionMovieDetails = { _, _ -> },
             onNavigateToCategoryList = { _, _ -> }
         )
     }
 }
 
-// A simple FakeRepository for previewing HomeScreen
+// A simple FakeRepository for previewing HomeScreen (from previous step)
 class FakeMovieRepository : com.halibiram.tomato.domain.repository.MovieRepository {
-    override fun getPopularMovies(page: Int) = kotlinx.coroutines.flow.flowOf(com.halibiram.tomato.core.common.result.Result.Success(emptyList<com.halibiram.tomato.domain.model.Movie>()))
-    override fun getTrendingMovies(timeWindow: String) = kotlinx.coroutines.flow.flowOf(com.halibiram.tomato.core.common.result.Result.Success(emptyList<com.halibiram.tomato.domain.model.Movie>()))
-    override fun getMoviesByCategory(categoryId: String) = kotlinx.coroutines.flow.flowOf(com.halibiram.tomato.core.common.result.Result.Success(emptyList<com.halibiram.tomato.domain.model.Movie>()))
-    override fun getMovieDetails(movieId: String) = kotlinx.coroutines.flow.flowOf(com.halibiram.tomato.core.common.result.Result.Success(null))
-}
-
-
-@Preview(showBackground = true)
-@Composable
-fun HomeScreenPreview_WithData() {
-    // This preview is more complex because HomeViewModel fetches data in init.
-    // To show data, you'd need a HomeViewModel instance that is already in a loaded state,
-    // or a fake GetMoviesUseCase that returns data immediately.
-    val fakeRepo = FakeMovieRepository() // Replace with a repo that has data for preview
-    val useCase = GetMoviesUseCase(fakeRepo)
-    val dataViewModel = HomeViewModel(useCase)
-    // To actually show data, you'd need to make fakeRepo return some movies.
-    // For example, modify FakeMovieRepository to return mock movies.
-    // This is becoming more involved than a simple @Preview.
-    // For now, this will show the screen after initial (empty) load.
-    TomatoTheme {
-        HomeScreen(
-            viewModel = dataViewModel,
-            onNavigateToDetails = {},
-            onNavigateToCategoryList = { _, _ -> }
-        )
-    }
+    override fun getPopularMovies(page: Int) = flowOf(com.halibiram.tomato.core.common.result.Result.Success(listOf(Movie("p1", "Popular Preview Movie", "", null, "2023", emptyList(), 7.7))))
+    override fun getTrendingMovies(timeWindow: String) = flowOf(com.halibiram.tomato.core.common.result.Result.Success(listOf(Movie("t1", "Trending Preview Movie", "", null, "2023", emptyList(), 8.0))))
+    override fun getMoviesByCategory(categoryId: String) = flowOf(com.halibiram.tomato.core.common.result.Result.Success(emptyList<Movie>()))
+    override fun getMovieDetails(movieId: String) = flowOf(com.halibiram.tomato.core.common.result.Result.Success(null))
+    override fun searchMovies(query: String, page: Int) = flowOf(com.halibiram.tomato.core.common.result.Result.Success(emptyList<Movie>()))
 }

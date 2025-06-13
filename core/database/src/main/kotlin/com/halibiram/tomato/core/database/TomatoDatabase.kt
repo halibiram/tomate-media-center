@@ -22,21 +22,22 @@ import com.halibiram.tomato.core.database.entity.SeriesEntity
         SeriesEntity::class,
         EpisodeEntity::class,
         DownloadEntity::class,
-        BookmarkEntity::class
-        // Add other entities here if any
+        BookmarkEntity::class,
+        ExtensionEntity::class // Added ExtensionEntity
     ],
-    version = 1, // Start with version 1. Increment when you add migrations.
-    exportSchema = true // Recommended: Export schema to a folder for version control. Set to false to disable.
+    version = 1, // Increment version if schema changes and migrations are needed
+    exportSchema = true
 )
 @TypeConverters(DateConverter::class, ListConverter::class)
 abstract class TomatoDatabase : RoomDatabase() {
 
     abstract fun movieDao(): MovieDao
-    abstract fun seriesDao(): SeriesDao // Contains episode methods as well
+    abstract fun seriesDao(): SeriesDao
     abstract fun downloadDao(): DownloadDao
     abstract fun bookmarkDao(): BookmarkDao
+    abstract fun extensionDao(): ExtensionDao // Added ExtensionDao getter
 
     companion object {
-        const val DATABASE_NAME = "tomato_app_database" // Renamed for clarity
+        const val DATABASE_NAME = "tomato_app_database"
     }
 }

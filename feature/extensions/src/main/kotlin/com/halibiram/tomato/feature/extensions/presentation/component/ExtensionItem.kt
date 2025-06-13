@@ -1,134 +1,206 @@
 package com.halibiram.tomato.feature.extensions.presentation.component
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Extension // Default icon
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning // For error indication
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.halibiram.tomato.feature.extensions.presentation.UiExtension
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.halibiram.tomato.domain.model.Extension // Domain model
 import com.halibiram.tomato.ui.theme.TomatoTheme
 
 @Composable
 fun ExtensionItem(
-    item: UiExtension,
-    onItemClick: (extensionId: String) -> Unit, // For viewing details or settings
-    onToggleEnable: (extensionId: String, currentIsEnabled: Boolean) -> Unit,
-    onUninstallClick: ((extensionId: String) -> Unit)?, // Nullable if uninstall is not always available
+    extension: Extension,
+    onToggleEnabled: (id: String, currentIsEnabled: Boolean) -> Unit,
+    onUninstall: (id: String) -> Unit,
+    onSettingsClick: ((id: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val showUninstallConfirmDialog = remember { mutableStateOf(false) }
+    var showUninstallConfirmDialog by remember { mutableStateOf(false) }
+    // var showMoreMenu by remember { mutableStateOf(false) } // Keep if more actions are added
+
+    val itemAlpha = if (extension.isEnabled && extension.loadingError == null) 1f else 0.6f
+    val titleColor = if (extension.loadingError != null) MaterialTheme.colorScheme.error else LocalContentColor.current
+
 
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onItemClick(item.id) }
             .padding(vertical = 4.dp)
-            .alpha(if (item.isEnabled) 1f else 0.6f), // Visually indicate disabled state
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            .alpha(itemAlpha),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = if (extension.loadingError != null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)) else CardDefaults.cardColors()
+
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Extension, // Replace with actual extension icon if available from item.iconUrl
-                contentDescription = "Extension Icon",
-                modifier = Modifier.size(40.dp),
-                tint = if (item.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (extension.iconUrl.isNullOrBlank()) {
+                        Icon(
+                            imageVector = if (extension.loadingError != null) Icons.Filled.Warning else Icons.Filled.Extension,
+                            contentDescription = "${extension.name} icon",
+                            modifier = Modifier.size(32.dp),
+                            tint = if (extension.loadingError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(extension.iconUrl)
+                                .crossfade(true)
+                                .error(if (extension.loadingError != null) Icons.Filled.Warning else Icons.Filled.Extension)
+                                .build(),
+                            contentDescription = extension.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                            colorFilter = if (!extension.isEnabled || extension.loadingError != null) ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix().apply { setToSaturation(0f) }) else null
+                        )
+                    }
+                }
 
-            Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = item.name, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = "Version: ${item.version} (API: ${item.apiVersion}) - Source: ${item.source}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = extension.name, style = MaterialTheme.typography.titleMedium, color = titleColor)
+                    Text(
+                        text = "v${extension.version} by ${extension.author ?: "Unknown author"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (extension.loadingError != null) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (extension.loadingError == null) {
+                        Text(
+                            text = "API: ${extension.apiVersion} • Source: ${extension.source}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Switch(
+                    checked = extension.isEnabled,
+                    onCheckedChange = { onToggleEnabled(extension.id, extension.isEnabled) },
+                    modifier = Modifier.align(Alignment.Top),
+                    enabled = extension.loadingError == null // Disable switch if extension itself had loading error
                 )
-                item.description?.let {
+            }
+
+            extension.description?.let {
+                if (extension.loadingError == null) { // Show description if no loading error
                     Text(
                         text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        // overflow = TextOverflow.Ellipsis
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 8.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Switch(
-                    checked = item.isEnabled,
-                    onCheckedChange = { onToggleEnable(item.id, item.isEnabled) },
-                    thumbContent = if (item.isEnabled) {
-                        { Icon(Icons.Filled.Extension, contentDescription = "Enabled", Modifier.size(SwitchDefaults.IconSize)) }
-                    } else null
+            extension.loadingError?.let { errorMsg ->
+                 Text(
+                    text = "Error: $errorMsg",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 8.dp)
                 )
-                if (onUninstallClick != null) {
-                    IconButton(onClick = { showUninstallConfirmDialog.value = true }, enabled = true /* For APKs, uninstall is always possible */) {
-                        Icon(Icons.Default.Delete, contentDescription = "Uninstall Extension", tint = MaterialTheme.colorScheme.error)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (onSettingsClick != null && extension.loadingError == null) { // Hide settings if error
+                    TextButton(onClick = { onSettingsClick(extension.id) }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("Settings")
                     }
+                }
+                TextButton(onClick = { showUninstallConfirmDialog = true }) {
+                     Icon(Icons.Default.Delete, contentDescription = "Uninstall", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(ButtonDefaults.IconSize))
+                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Uninstall", color = MaterialTheme.colorScheme.error)
                 }
             }
         }
     }
 
-    if (showUninstallConfirmDialog.value && onUninstallClick != null) {
+    if (showUninstallConfirmDialog) {
         AlertDialog(
-            onDismissRequest = { showUninstallConfirmDialog.value = false },
-            title = { Text("Uninstall Extension") },
-            text = { Text("Are you sure you want to uninstall '${item.name}'? This action cannot be undone.") },
+            onDismissRequest = { showUninstallConfirmDialog = false },
+            icon = { Icon(Icons.Default.Warning, contentDescription = "Warning") },
+            title = { Text("Uninstall Extension?") },
+            text = { Text("Are you sure you want to uninstall '${extension.name}'? This action may delete associated data and cannot be undone.") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onUninstallClick(item.id)
-                        showUninstallConfirmDialog.value = false
-                    }
-                ) { Text("Uninstall", color = MaterialTheme.colorScheme.error) }
+                        onUninstall(extension.id)
+                        showUninstallConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Uninstall") }
             },
             dismissButton = {
-                TextButton(onClick = { showUninstallConfirmDialog.value = false }) { Text("Cancel") }
+                TextButton(onClick = { showUninstallConfirmDialog = false }) { Text("Cancel") }
             }
         )
     }
 }
 
-@Preview(showBackground = true)
+
+@Preview(showBackground = true, widthDp = 360)
 @Composable
 fun ExtensionItemPreview_Enabled() {
-    val item = UiExtension("com.example.ext1", "Movie Source X", "1.2.0", 1, "Provides access to Movie Source X content.", null, true, "Installed")
+    val item = Extension("com.example.ext1", "Movie Source X", "com.example.ext1", "1.2.0", "/some/uri", "Provides access to Movie Source X content.", true, null, 1, "Tomato Devs", "Store", "com.example.ext1.MainClass")
     TomatoTheme {
-        ExtensionItem(item = item, onItemClick = {}, onToggleEnable = { _, _ -> }, onUninstallClick = {})
+        ExtensionItem(item = item, onToggleEnabled = { _, _ -> }, onUninstall = {}, onSettingsClick = {})
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, widthDp = 360)
 @Composable
 fun ExtensionItemPreview_Disabled() {
-    val item = UiExtension("com.example.ext2", "Series Archive Y", "0.8.5", 1, "Old archive, currently disabled.", null, false, "External")
+    val item = Extension("com.example.ext2", "Series Archive Y", "com.example.ext2", "0.8.5", null, "Old archive, currently disabled.", false, "/icon.png", 1, "Tomato Devs", "File", "com.example.ext2.MainClass")
     TomatoTheme {
-        ExtensionItem(item = item, onItemClick = {}, onToggleEnable = { _, _ -> }, onUninstallClick = {})
+        ExtensionItem(item = item, onToggleEnabled = { _, _ -> }, onUninstall = {})
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, widthDp = 360)
 @Composable
-fun ExtensionItemPreview_NoUninstall() {
-    val item = UiExtension("com.example.ext3", "Built-in Utility", "1.0.0", 1, "Cannot be uninstalled.", null, true, "System")
+fun ExtensionItemPreview_LoadingError() {
+    val item = Extension("com.example.ext3", "Broken Extension", "com.example.ext3", "1.0.0", null, "This extension failed to load properly.", true, null, 1, "Tomato Devs", "File", "com.example.ext3.MainClass", loadingError = "ClassNotFoundException: com.example.ext3.MainClass")
     TomatoTheme {
-        ExtensionItem(item = item, onItemClick = {}, onToggleEnable = { _, _ -> }, onUninstallClick = null)
+        ExtensionItem(item = item, onToggleEnabled = { _, _ -> }, onUninstall = {}, onSettingsClick = {})
     }
 }

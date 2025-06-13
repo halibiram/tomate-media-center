@@ -1,19 +1,18 @@
-name: Pull Request Checks
+name: PR Checks
 
 on:
   pull_request:
-    branches: [ main ] # Or other target branches like 'develop'
+    branches: [ main ] # Or your default branch
 
 jobs:
-  lint_code:
-    name: Run Lint Checks
+  check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -22,61 +21,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: Run Android Lint
-        run: ./gradlew lintDebug # Or specific module: :app:lintDebug
+      - name: Build debug APK (quick check)
+        run: ./gradlew :app:assembleDebug # Focus on app module
 
-      # Optional: Upload Lint results
-      # - name: Upload Lint Report
-      #   if: always() # Ensure report is uploaded even if lint fails
-      #   uses: actions/upload-artifact@v3
-      #   with:
-      #     name: lint-report
-      #     path: '**/build/reports/lint-results-debug.html' # Path to HTML report
-
-  run_unit_tests:
-    name: Run Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
+      - name: Run lint check
+        run: ./gradlew lintDebug
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest # Or combine all module tests
-
-      # Optional: Upload test results
-      # - name: Upload Unit Test Results
-      #   if: always()
-      #   uses: actions/upload-artifact@v3
-      #   with:
-      #     name: pr-unit-test-results
-      #     path: '**/build/reports/tests/testDebugUnitTest/'
-
-  # Optional: Build check (can be useful if lint/tests don't cover everything)
-  # build_check:
-  #   name: Build Check
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v3
-  #     - name: Set up JDK 17
-  #       uses: actions/setup-java@v3
-  #       with:
-  //         java-version: '17'
-  #         distribution: 'temurin'
-  #         cache: gradle
-  #     - name: Grant execute permission for gradlew
-  #       run: chmod +x ./gradlew
-  #     - name: Assemble Debug Build
-  #       run: ./gradlew assembleDebug
-yaml
-File '.github/workflows/pr-check.yml' created successfully.
+        run: ./gradlew testDebugUnitTest

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.dummysuccess"> <!-- This will be used as the extension ID by ExtensionLoader -->
+
+    <application
+        android:label="Dummy Success Manifest Label" <!-- Example label, might not be read by PackageManager.getPackageArchiveInfo easily -->
+        android:icon="@android:drawable/sym_def_app_icon"> <!-- Placeholder icon -->
+
+        <!-- Tomato Extension Metadata -->
+        <meta-data android:name="com.halibiram.tomato.EXTENSION_CLASS_NAME" android:value="com.example.dummysuccess.SuccessProvider"/>
+        <meta-data android:name="com.halibiram.tomato.EXTENSION_API_VERSION" android:value="1"/> <!-- Ensure this matches CURRENT_HOST_EXTENSION_API_VERSION -->
+        <meta-data android:name="com.halibiram.tomato.EXTENSION_NAME" android:value="Dummy Success Extension (Manifest)"/>
+        <meta-data android:name="com.halibiram.tomato.EXTENSION_VERSION_NAME" android:value="1.0.1-manifest"/> <!-- Different from class to show it's from manifest -->
+        <meta-data android:name="com.halibiram.tomato.EXTENSION_AUTHOR" android:value="Tomato App (Manifest)"/>
+        <meta-data android:name="com.halibiram.tomato.EXTENSION_DESCRIPTION" android:value="Provides great success movies. (Parsed from Manifest)"/>
+
+    </application>
+</manifest>

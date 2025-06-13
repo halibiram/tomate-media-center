@@ -1,47 +1,72 @@
 # Tomato Features
 
-This document highlights the key features of the Tomato application.
+This document highlights the key features of the Tomato application, providing a user-centric overview.
 
-## Core Playback
+## 🏠 Home Screen
 
-- **Wide Format Support:** Play a variety of video and audio formats.
-- **Hardware Acceleration:** Smooth playback for high-definition content.
-- **Subtitle Support:** Internal and external subtitles (SRT, ASS, etc.), customization options.
-- **Audio Track Selection:** Switch between different audio languages or commentary tracks.
-- **Playback Speed Control:** Adjust playback speed from 0.5x to 2.0x.
+- **Discover Content:** Easily browse sections like "Popular Movies," "Trending Today," and content provided by your installed "Extensions."
+- **Dynamic Carousels:** Content is presented in horizontally scrolling lists for quick visual access.
+- **Quick Navigation:** Tap on any movie or item to view its details (feature in progress).
 
-## Library Management
+## 🔍 Search
 
-- **Local Media Scanning:** Automatically scan and organize your local movie and TV show collections.
-- **Metadata Fetching:** Retrieve details like posters, summaries, ratings, and cast information from online sources (e.g., TMDB, TVDB - if applicable).
-- **Categorization:** Browse by genre, year, recently added, etc.
-- **Search Functionality:** Quickly find media items in your library.
+- **Unified Search:** Find movies from your local library (if applicable) and from installed content extensions using a single search bar.
+- **Instant Results:** Search results appear as you type (with debouncing for performance).
+- **Clear Categorization:** Results from different sources (e.g., "Library," "Extensions") are clearly delineated.
 
-## Extensions System
+## ▶️ Advanced Media Player
 
-- **Content from Various Sources:** Install extensions to access content beyond your local library (e.g., streaming services, online archives - if extensions provide this).
-- **Discover and Manage Extensions:** Easily browse, install, and manage installed extensions.
+- **Robust Playback:** Powered by `androidx.media3` (ExoPlayer) for reliable playback of various formats.
+- **Intuitive Gesture Controls:**
+    - Single tap to toggle player controls visibility.
+    - Double tap on screen sides to seek forward or backward.
+    - (Future: Swipe for brightness/volume).
+- **Comprehensive Controls:** On-screen controls for play/pause, seek bar, time display, fullscreen toggle, and settings.
+- **Background Playback:** Continue listening to audio when the app is in the background or screen is off, with notification controls.
+- **Google Cast Support:** Stream your media to Chromecast and other Google Cast-enabled devices.
+- **Subtitle & Audio Track Selection:**
+    - Automatically discovers available subtitle and audio tracks.
+    - Easily switch between different language subtitles or audio tracks via a selection dialog in player settings.
+    - Option to disable subtitles.
 
-## User Experience
+## 📥 Downloads
 
-- **Clean and Intuitive Interface:** Designed for ease of use on various screen sizes.
-- **Customizable Theme:** Light and Dark mode options.
-- **Bookmarks:** Save your favorite movies and series for quick access.
-- **Download Manager:** Download media for offline viewing.
-    - Background downloading.
-    - Progress tracking.
-- **Player Gestures:** Intuitive controls for brightness, volume, seek, and play/pause.
+- **Offline Viewing:** Download movies and other media content to watch later without an internet connection.
+- **Background Management:** Downloads continue in the background, managed by `WorkManager`.
+- **Progress Tracking:** View download progress (percentage, size) and status (Downloading, Paused, Completed, Failed) in a dedicated "Downloads" screen.
+- **Download Controls:** Pause, resume, cancel, or retry failed downloads. Delete completed downloads to free up space.
+- **Notifications:** Stay informed about download progress and completion via system notifications.
 
-## Advanced Features
+## ⭐ Bookmarks
 
-- **Network Streaming (If applicable):** Play media from network shares (SMB, FTP, etc.) or UPnP/DLNA servers.
-- **Casting (If applicable):** Cast media to Chromecast or other compatible devices.
-- **Synchronization (If applicable):** Sync watch history and bookmarks across devices (e.g., via Trakt.tv).
+- **Save Your Favorites:** Easily bookmark movies and series you want to watch later or keep track of.
+- **Centralized Access:** View all your bookmarked items in a dedicated "Bookmarks" screen.
+- **Filter:** Quickly filter bookmarks by type (e.g., "Movies," "Series") to find what you're looking for.
+- **Easy Management:** Add or remove bookmarks with a single tap from media detail screens or the bookmarks list.
 
-## Settings & Customization
+## ⚙️ Settings & Customization
 
-- **Player Settings:** Configure subtitle appearance, default playback options, etc.
-- **Library Settings:** Manage media folders, rescan intervals.
-- **App Settings:** Theme, notifications, data saver.
-md
-File 'docs/user-guide/features.md' created successfully.
+- **Appearance:**
+    - Choose between Light, Dark, or System Default app themes.
+    - (Future: Select accent colors or further customize the look).
+- **Player Preferences:**
+    - Set default subtitle language.
+    - Configure auto-play for next episodes.
+    - Adjust seek increment duration.
+    - Set preferred playback speed.
+    - (Future: Set preferred video resolution).
+- **Data Management:**
+    - Enable Data Saver mode to reduce data usage on mobile networks.
+    - (Future: Manage cache, sync settings).
+- **Account:**
+    - (Future: Manage user profile, login/logout if account system is implemented).
+
+## 🧩 Extensions System
+
+- **Expand Your Content:** Install third-party extensions (currently via APK sideloading) to access a wider range of media content and features.
+- **Content Integration:** Content from enabled extensions (e.g., popular movies, search results) is integrated directly into the Home and Search screens.
+- **Manage Extensions:** View installed extensions, enable/disable them, and uninstall them from the "Manage Extensions" screen.
+- **Error Handling:** The app provides feedback if an extension fails to load or encounters an error while fetching content.
+
+---
+*This feature list will evolve as the Tomato application develops.*

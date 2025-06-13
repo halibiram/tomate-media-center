@@ -2,116 +2,128 @@ package com.halibiram.tomato.feature.extensions.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.halibiram.tomato.feature.extensions.api.TomatoExtension // For the data class
-import com.halibiram.tomato.feature.extensions.engine.ExtensionEngine
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import com.halibiram.tomato.core.common.result.Result // Import your Result class
+import com.halibiram.tomato.domain.model.Extension
+import com.halibiram.tomato.domain.usecase.extension.EnableExtensionUseCase
+import com.halibiram.tomato.domain.usecase.extension.GetExtensionsUseCase
+import com.halibiram.tomato.domain.usecase.extension.InstallExtensionUseCase
+import com.halibiram.tomato.domain.usecase.extension.UninstallExtensionUseCase
+// Removed direct ExtensionManifest import as it's handled by use case
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-
-// UI representation of an extension
-data class UiExtension(
-    val id: String,
-    val name: String,
-    val version: String,
-    val apiVersion: Int,
-    val description: String? = null, // Could be from metadata
-    val iconUrl: String? = null, // Could be from metadata
-    val isEnabled: Boolean, // Managed by the host app
-    val source: String // e.g., "Installed APK", "External File"
-)
+import javax.inject.Inject
 
 data class ExtensionsUiState(
-    val extensions: List<UiExtension> = emptyList(),
     val isLoading: Boolean = true,
-    val error: String? = null
+    val extensions: List<Extension> = emptyList(),
+    val error: String? = null,
+    val infoMessage: String? = null
 )
 
-// @HiltViewModel
-class ExtensionsViewModel /*@Inject constructor(
-    // private val extensionEngine: ExtensionEngine,
-    // private val extensionsRepository: ExtensionsRepository // Or directly use engine
-)*/ : ViewModel() {
+@HiltViewModel
+class ExtensionsViewModel @Inject constructor(
+    private val getExtensionsUseCase: GetExtensionsUseCase,
+    private val installExtensionUseCase: InstallExtensionUseCase, // Updated use case
+    private val uninstallExtensionUseCase: UninstallExtensionUseCase,
+    private val enableExtensionUseCase: EnableExtensionUseCase
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExtensionsUiState())
-    val uiState: StateFlow<ExtensionsUiState> = _uiState
-
-    // In a real app, ExtensionEngine would be injected.
-    // For this placeholder, we might simulate it or assume it's passed.
-    private var mockEngine: ExtensionEngine? = null // Placeholder for a real engine
+    val uiState: StateFlow<ExtensionsUiState> = _uiState.asStateFlow()
 
     init {
-        // If using a real engine, it would be injected.
-        // For preview/placeholder:
-        // mockEngine = ExtensionEngine(ApplicationProvider.getApplicationContext(), ExtensionLoader(ApplicationProvider.getApplicationContext()), ExtensionSandbox(...))
         loadExtensions()
     }
 
     fun loadExtensions() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                // val loadedExtensions = extensionEngine.getAllExtensions() // From real engine
-                // val uiExtensions = loadedExtensions.map { mapToUiExtension(it, true) } // Assuming all are enabled initially
-
-                // Simulate fetching extensions
-                kotlinx.coroutines.delay(500)
-                val simulatedExtensions = listOf(
-                    UiExtension("com.example.movieprovider", "Example Movie Provider", "1.0.2", 1, "Provides movies from Example Source", null, true, "Installed"),
-                    UiExtension("com.example.seriesprovider", "Example Series Hub", "0.9.0", 1, "Access series content easily", null, true, "Installed"),
-                    UiExtension("com.example.disabledext", "Old Extension", "0.5.0", 1, "This one is disabled by user", null, false, "Installed")
-                )
-                _uiState.value = _uiState.value.copy(isLoading = false, extensions = simulatedExtensions)
-
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = "Failed to load extensions: ${e.message}")
-            }
-        }
-    }
-
-    private fun mapToUiExtension(ext: TomatoExtension, isEnabled: Boolean): UiExtension {
-        return UiExtension(
-            id = ext.id,
-            name = ext.name,
-            version = ext.version,
-            apiVersion = ext.apiVersion,
-            // description and iconUrl would come from metadata associated with the extension
-            description = "A sample ${ext.name} extension.",
-            isEnabled = isEnabled, // This status would be stored by the host app
-            source = "Installed" // Placeholder
-        )
-    }
-
-    fun toggleExtensionEnabled(extensionId: String, currentIsEnabled: Boolean) {
-        viewModelScope.launch {
-            try {
-                if (currentIsEnabled) {
-                    // extensionEngine.disableExtension(extensionId)
-                } else {
-                    // extensionEngine.enableExtension(extensionId)
+            _uiState.update { it.copy(isLoading = true, error = null, infoMessage = null) }
+            getExtensionsUseCase.invoke()
+                .catch { e ->
+                    _uiState.update { it.copy(isLoading = false, error = "Failed to load extensions: ${e.message}") }
                 }
-                // Refresh the list after toggling
-                loadExtensions() // Or update the specific item in the list for better UX
-            } catch (e: Exception) {
-                // Handle error during enable/disable, maybe show a toast
-                _uiState.value = _uiState.value.copy(error = "Failed to toggle extension ${extensionId}: ${e.message}")
-            }
+                .collectLatest { extensions ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            extensions = extensions.sortedBy { ext -> ext.name.lowercase() }
+                        )
+                    }
+                }
         }
     }
 
-    fun uninstallExtension(extensionId: String) {
+    /**
+     * Installs an extension from the given source URI.
+     * Manifest is now loaded by the InstallExtensionUseCase.
+     */
+    fun installExtension(sourceUri: String) {
         viewModelScope.launch {
-            try {
-                // extensionEngine.uninstallExtension(extensionId)
-                // This might involve prompting the user if it's an APK uninstall
-                loadExtensions() // Refresh list
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(error = "Failed to uninstall extension ${extensionId}: ${e.message}")
-            }
+            // Extract a user-friendly name for messages before result, if possible
+            val fileName = sourceUri.substringAfterLast('/')
+            _uiState.update { it.copy(isLoading = true, error = null, infoMessage = "Installing $fileName...") }
+
+            val result = installExtensionUseCase(sourceUri = sourceUri, sourceDescription = "From file: $fileName") // Pass URI
+
+            result.fold(
+                onSuccess = { installedExtension ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            infoMessage = "Extension installed: ${installedExtension.name} v${installedExtension.version}"
+                        )
+                    }
+                    // The list should refresh automatically due to the Flow collection in init().
+                    // If not, uncomment: loadExtensions()
+                },
+                onFailure = { exception ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "Failed to install $fileName: ${exception.message}"
+                        )
+                    }
+                }
+            )
         }
     }
 
-    fun getExtensionDetails(extensionId: String) {
-        // Navigate to a details screen or show a dialog
-        // This would fetch more detailed info if available
+    fun uninstallExtension(id: String) {
+        viewModelScope.launch {
+            val extensionName = _uiState.value.extensions.find { it.id == id }?.name ?: id
+            _uiState.update { it.copy(isLoading = true, error = null, infoMessage = "Uninstalling $extensionName...") }
+            val result = uninstallExtensionUseCase(id)
+            result.fold(
+                onSuccess = {
+                    _uiState.update { it.copy(isLoading = false, infoMessage = "$extensionName uninstalled.") }
+                },
+                onFailure = { exception ->
+                    _uiState.update { it.copy(isLoading = false, error = "Failed to uninstall $extensionName: ${exception.message}") }
+                }
+            )
+        }
+    }
+
+    fun toggleExtensionEnabled(id: String, currentIsEnabled: Boolean) {
+        viewModelScope.launch {
+            val extensionName = _uiState.value.extensions.find { it.id == id }?.name ?: id
+            val actionText = if (currentIsEnabled) "Disabling" else "Enabling"
+            _uiState.update { it.copy(isLoading = true, error = null, infoMessage = "$actionText $extensionName...") }
+
+            val result = enableExtensionUseCase(id, !currentIsEnabled)
+            result.fold(
+                onSuccess = {
+                    _uiState.update { it.copy(isLoading = false, infoMessage = "$extensionName ${if (!currentIsEnabled) "enabled" else "disabled"}.") }
+                },
+                onFailure = { exception ->
+                     _uiState.update { it.copy(isLoading = false, error = "Failed to $actionText $extensionName: ${exception.message}") }
+                }
+            )
+        }
+    }
+
+    fun clearUserMessages() {
+        _uiState.update { it.copy(error = null, infoMessage = null) }
     }
 }

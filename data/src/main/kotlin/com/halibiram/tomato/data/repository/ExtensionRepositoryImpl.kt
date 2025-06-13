@@ -1,83 +1,124 @@
 package com.halibiram.tomato.data.repository
 
-import com.halibiram.tomato.feature.extensions.api.TomatoExtension
-import com.halibiram.tomato.feature.extensions.engine.ExtensionEngine // Placeholder
-import com.halibiram.tomato.domain.repository.ExtensionInfo
-import com.halibiram.tomato.domain.repository.ExtensionRepository
+import com.halibiram.tomato.core.database.dao.ExtensionDao
+import com.halibiram.tomato.core.database.entity.ExtensionEntity
+// import com.halibiram.tomato.feature.extensions.api.TomatoExtension // Raw extension instance, used by domain repo
+// import com.halibiram.tomato.feature.extensions.engine.ExtensionEngine // For loading/managing raw extensions
+import com.halibiram.tomato.domain.model.Extension // Domain model
+import com.halibiram.tomato.domain.repository.ExtensionRepository // Domain interface
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class ExtensionRepositoryImpl @Inject constructor(
-    private val extensionEngine: ExtensionEngine? // Nullable for placeholder
-    // private val extensionMetadataDao: ExtensionMetadataDao // For storing enabled/disabled state, order etc.
+    private val extensionDao: ExtensionDao
+    // private val extensionEngine: ExtensionEngine // Will be needed for getRawExtensionById and actual install/uninstall logic
 ) : ExtensionRepository {
 
-    override fun getInstalledExtensionsFlow(): Flow<List<ExtensionInfo>> = flow {
-        // Placeholder:
-        // 1. Get all raw extensions from ExtensionEngine.
-        // 2. Get metadata (like isEnabled, description) from extensionMetadataDao.
-        // 3. Combine and map to List<ExtensionInfo>.
-        // For now, use the direct (non-flow) version or mock.
-        emit(getInstalledExtensions())
-    }
-
-    override suspend fun getInstalledExtensions(): List<ExtensionInfo> {
-        return extensionEngine?.getAllExtensions()?.map { rawExt ->
-            mapToDomain(rawExt, true /* isEnabled placeholder */, "Placeholder description")
-        } ?: emptyList()
-    }
-
-    override suspend fun getExtensionById(id: String): ExtensionInfo? {
-        return extensionEngine?.getExtensionById(id)?.let { rawExt ->
-            mapToDomain(rawExt, true, "Placeholder description")
+    override fun getExtensions(): Flow<List<Extension>> { // Renamed from getInstalledExtensionsFlow
+        return extensionDao.getAllExtensions().map { entities ->
+            entities.map { mapEntityToDomain(it) }
         }
     }
 
-    override suspend fun getRawExtensionById(id: String): TomatoExtension? {
-        return extensionEngine?.getExtensionById(id)
+    override fun getEnabledExtensions(): Flow<List<Extension>> {
+        return extensionDao.getEnabledExtensions().map { entities ->
+            entities.map { mapEntityToDomain(it) }
+        }
     }
 
-    override suspend fun enableExtension(id: String) {
-        // extensionEngine?.enableExtension(id)
-        // extensionMetadataDao?.updateEnabledState(id, true)
+    override suspend fun getExtension(id: String): Extension? { // Renamed from getExtensionById
+        return extensionDao.getExtensionById(id)?.let { mapEntityToDomain(it) }
     }
 
-    override suspend fun disableExtension(id: String) {
-        // extensionEngine?.disableExtension(id)
-        // extensionMetadataDao?.updateEnabledState(id, false)
+    override fun getExtensionFlow(id: String): Flow<Extension?> {
+        return extensionDao.getExtensionByIdFlow(id).map { entity ->
+            entity?.let { mapEntityToDomain(it) }
+        }
     }
 
-    override suspend fun installExtension(filePath: String): Result<Unit> {
-        // This is complex. Might involve:
-        // 1. Copying file to a secure location.
-        // 2. Validating the extension package.
-        // 3. Telling ExtensionEngine to load it.
-        // 4. Storing metadata.
-        // extensionEngine?.loadExtensionFromFile(filePath) // Simplified
-        return Result.success(Unit) // Placeholder
+    // getRawExtensionById would require ExtensionEngine to load and return the actual instance.
+    // For now, it's not implemented here as Engine is not fully integrated.
+    // override suspend fun getRawExtensionById(id: String): TomatoExtension? {
+    //     val extensionInfo = getExtension(id)
+    //     return if (extensionInfo != null && extensionInfo.isEnabled) {
+    //         // extensionEngine.getLoadedExtensionInstance(id) // Conceptual
+    //         null // Placeholder
+    //     } else null
+    // }
+
+    override suspend fun installExtension(extension: Extension, sourceUri: String?) {
+        // This simplified version assumes 'extension' domain model is pre-populated with manifest data.
+        // A real install would parse the sourceUri to get this data.
+        val entity = mapDomainToEntity(extension).copy(
+            sourceUri = sourceUri, // Store where it came from
+            installedAt = System.currentTimeMillis() // Set install time
+        )
+        extensionDao.insertExtension(entity)
+        // Actual file operations or APK parsing would be handled by ExtensionEngine or a dedicated installer service.
     }
 
     override suspend fun uninstallExtension(id: String): Result<Unit> {
-        // extensionEngine?.uninstallExtension(id)
-        // extensionMetadataDao?.deleteExtension(id)
-        // Delete files if applicable
-        return Result.success(Unit) // Placeholder
+        // TODO: Add logic to delete files associated with the extension (e.g., its APK, data)
+        // This might be handled by an ExtensionEngine or a dedicated uninstaller service.
+        // For now, just remove from DB.
+        val extensionEntity = extensionDao.getExtensionById(id)
+        if (extensionEntity == null) {
+            return Result.failure(Exception("Extension with ID $id not found."))
+        }
+        extensionDao.deleteExtensionById(id)
+        // extensionEntity.sourceUri?.let { uri -> /* code to delete file from uri */ }
+        // extensionEntity.iconPath?.let { path -> /* code to delete file from path */ }
+        return Result.success(Unit)
     }
 
-    // --- Mapper ---
-    private fun mapToDomain(extension: TomatoExtension, isEnabled: Boolean, description: String?): ExtensionInfo {
-        return ExtensionInfo(
-            id = extension.id,
-            name = extension.name,
-            version = extension.version,
-            apiVersion = extension.apiVersion,
-            description = description ?: "No description provided.", // Could fetch from metadata
-            iconUrl = null, // Would come from metadata
-            isEnabled = isEnabled, // Would come from metadata (user preference)
-            source = "Installed" // Placeholder, could be more specific (APK, file path, etc.)
+    override suspend fun enableExtension(id: String, enable: Boolean) {
+        extensionDao.setEnabled(id, enable)
+        // If enabling, ExtensionEngine might need to load/initialize the extension.
+        // If disabling, ExtensionEngine might need to unload/de-initialize.
+    }
+
+    override suspend fun updateExtensionLoadingError(id: String, error: String?) {
+        extensionDao.updateLoadingError(id, error)
+    }
+
+    // --- Mappers ---
+    private fun mapEntityToDomain(entity: ExtensionEntity): Extension {
+        return Extension(
+            id = entity.id,
+            name = entity.name,
+            version = entity.version,
+            author = entity.author,
+            description = entity.description,
+            sourceUrl = entity.sourceUri, // sourceUrl in domain model maps to sourceUri in entity
+            iconUrl = entity.iconPath,
+            isEnabled = entity.isEnabled,
+            apiVersion = entity.apiVersion,
+            className = entity.className,
+            packageName = entity.packageName,
+            source = entity.sourceDescription ?: "Unknown Source",
+            loadingError = entity.loadingError // Map loadingError
+        )
+    }
+
+    private fun mapDomainToEntity(domain: Extension): ExtensionEntity {
+        return ExtensionEntity(
+            id = domain.id,
+            name = domain.name,
+            version = domain.version,
+            author = domain.author ?: "Unknown Author",
+            description = domain.description,
+            sourceUri = domain.sourceUrl,
+            iconPath = domain.iconUrl,
+            isEnabled = domain.isEnabled,
+            installedAt = System.currentTimeMillis(), // This should ideally be set only on first install
+            apiVersion = domain.apiVersion,
+            className = domain.className,
+            packageName = domain.packageName,
+            sourceDescription = domain.source,
+            loadingError = domain.loadingError // Map loadingError
         )
     }
 }

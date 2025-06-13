@@ -13,9 +13,9 @@ data class Extension(
     val description: String?,
     var isEnabled: Boolean, // Managed by the host application
     val iconUrl: String? = null, // URL or path to an icon for the extension
-    val apiVersion: Int, // API version the extension targets
-    val author: String? = null, // Optional: author of the extension
-    val source: String // e.g., "Installed APK", "External File", "Built-in"
+    val apiVersion: Int,
+    val author: String? = null,
+    val source: String,
+    val className: String,
+    val loadingError: String? = null // Error message if extension failed to load/initialize
 )
-// This replaces the ExtensionInfo data class previously defined in ExtensionRepository.kt
-// It adds more fields like packageName, iconUrl, apiVersion, author, and source for better representation.

@@ -1,5 +1,7 @@
 package com.halibiram.tomato.feature.extensions.presentation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,23 +12,56 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+// import androidx.compose.ui.platform.LocalContext // Not directly needed now
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.halibiram.tomato.domain.model.Extension
+// import com.halibiram.tomato.feature.extensions.api.ExtensionManifest // No longer needed for Dummy
 import com.halibiram.tomato.feature.extensions.presentation.component.ExtensionItem
 import com.halibiram.tomato.ui.theme.TomatoTheme
+import kotlinx.coroutines.launch
+
+// DummyExtensionManifest is no longer needed here as the ViewModel and UseCase handle manifest loading (simulated).
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExtensionsScreen(
-    // viewModel: ExtensionsViewModel = hiltViewModel(), // With Hilt
-    viewModel: ExtensionsViewModel, // Pass for preview or non-Hilt
+    viewModel: ExtensionsViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit,
-    onNavigateToAddExtension: () -> Unit, // For adding new extensions from file/URL
-    onNavigateToExtensionDetails: (extensionId: String) -> Unit // For viewing/configuring specific extension
+    onNavigateToExtensionSettings: ((extensionId: String) -> Unit)? = null
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    // val coroutineScope = rememberCoroutineScope() // Not used directly here anymore
+    // val context = LocalContext.current // Not used directly here anymore
+
+    val pickFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                // ViewModel's installExtension now only needs the URI
+                viewModel.installExtension(it.toString())
+            }
+        }
+    )
+
+    LaunchedEffect(uiState.infoMessage) {
+        uiState.infoMessage?.let {
+            snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Short)
+            viewModel.clearUserMessages()
+        }
+    }
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let {
+            snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Long, actionLabel = "Dismiss")
+            viewModel.clearUserMessages()
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Manage Extensions") },
@@ -34,32 +69,29 @@ fun ExtensionsScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
-                },
-                actions = {
-                    IconButton(onClick = onNavigateToAddExtension) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Extension")
-                    }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = {
+                pickFileLauncher.launch(arrayOf("application/vnd.android.package-archive", "*/*")) // APKs or any file
+            }) {
+                Icon(Icons.Default.Add, contentDescription = "Install New Extension")
+            }
         }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            if (uiState.isLoading) {
+            if (uiState.isLoading && uiState.extensions.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            } else if (uiState.error != null) {
+            }
+            else if (uiState.extensions.isEmpty() && !uiState.isLoading) {
                 Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                    Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error)
-                }
-            } else if (uiState.extensions.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("No extensions installed.")
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                        Text("No extensions installed yet.", style = MaterialTheme.typography.headlineSmall)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = onNavigateToAddExtension) {
-                            Text("Add your first extension")
-                        }
+                        Text("Tap the '+' button to add a new extension.", style = MaterialTheme.typography.bodyLarge)
                     }
                 }
             } else {
@@ -69,10 +101,12 @@ fun ExtensionsScreen(
                 ) {
                     items(uiState.extensions, key = { it.id }) { extension ->
                         ExtensionItem(
-                            item = extension,
-                            onItemClick = { onNavigateToExtensionDetails(extension.id) },
-                            onToggleEnable = viewModel::toggleExtensionEnabled,
-                            onUninstallClick = { viewModel.uninstallExtension(extension.id) } // Simplified
+                            extension = extension,
+                            onToggleEnabled = { id, isEnabled -> viewModel.toggleExtensionEnabled(id, isEnabled) },
+                            onUninstall = { id -> viewModel.uninstallExtension(id) },
+                            onSettingsClick = if (false /* TODO: Check if extension has settings */) {
+                                { id -> onNavigateToExtensionSettings?.invoke(id) }
+                            } else null
                         )
                     }
                 }
@@ -84,13 +118,13 @@ fun ExtensionsScreen(
 @Preview(showBackground = true)
 @Composable
 fun ExtensionsScreenPreview_Empty() {
-    val emptyVM = ExtensionsViewModel()
+    val mockViewModel: ExtensionsViewModel = mockk(relaxed = true)
+    every { mockViewModel.uiState } returns MutableStateFlow(ExtensionsUiState(isLoading = false, extensions = emptyList()))
     TomatoTheme {
         ExtensionsScreen(
-            viewModel = emptyVM,
+            viewModel = mockViewModel,
             onNavigateBack = {},
-            onNavigateToAddExtension = {},
-            onNavigateToExtensionDetails = {}
+            onNavigateToExtensionSettings = {}
         )
     }
 }
@@ -98,22 +132,18 @@ fun ExtensionsScreenPreview_Empty() {
 @Preview(showBackground = true)
 @Composable
 fun ExtensionsScreenPreview_WithItems() {
-    val vmWithItems = ExtensionsViewModel().apply {
-        // Simulate having items (ViewModel needs modification for easy preview state setting)
-        // _uiState.value = ExtensionsUiState(
-        //     isLoading = false,
-        //     extensions = listOf(
-        //         UiExtension("com.example.ext1", "Movie Source X", "1.2.0", 1, isEnabled = true, source = "Installed"),
-        //         UiExtension("com.example.ext2", "Series Archive Y", "0.8.5", 1, isEnabled = false, source = "External")
-        //     )
-        // )
-    }
+     val mockViewModel: ExtensionsViewModel = mockk(relaxed = true)
+    val sampleExtensions = listOf(
+        Extension("com.example.ext1", "Movie Source X", "com.example.ext1", "1.2.0", "/some/uri", "Provides access to Movie Source X content.", true, null, 1, "Tomato Devs", "Store"),
+        Extension("com.example.ext2", "Series Archive Y", "com.example.ext2", "0.8.5", null, "Old archive, currently disabled.", false, "/icon.png", 1, "Tomato Devs", "File")
+    )
+    every { mockViewModel.uiState } returns MutableStateFlow(ExtensionsUiState(isLoading = false, extensions = sampleExtensions))
+
     TomatoTheme {
         ExtensionsScreen(
-            viewModel = vmWithItems,
+            viewModel = mockViewModel,
             onNavigateBack = {},
-            onNavigateToAddExtension = {},
-            onNavigateToExtensionDetails = {}
+            onNavigateToExtensionSettings = {}
         )
     }
 }

@@ -59,5 +59,11 @@ object DatabaseModule {
         return database.bookmarkDao()
     }
 
+    @Provides
+    @Singleton
+    fun provideExtensionDao(database: TomatoDatabase): com.halibiram.tomato.core.database.dao.ExtensionDao {
+        return database.extensionDao()
+    }
+
     // No separate EpisodeDao provider as its methods are in SeriesDao
 }
